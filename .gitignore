@@ -1,0 +1,35 @@
+# Downloaded articles content (7000+ files, regenerable)
+articles/
+
+# Large data files (can be regenerated or stored separately)
+*.csv
+*.db
+*.sqlite
+*.sqlite3
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Node modules
+node_modules/
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# Generated visualizations (can be regenerated)
+*.png
+
+# Temporary and test files
+*.log
+*.tmp
+test_*.py
+debug_*.py
+create_*.py
