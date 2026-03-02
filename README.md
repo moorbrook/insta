@@ -4,14 +4,6 @@ A fast Rust CLI for archiving your entire Instapaper library locally with full-t
 
 Downloads articles from an Instapaper CSV export, extracts clean text using a multi-tier extraction pipeline, and stores everything in a searchable SQLite database with FTS5.
 
-## Stats
-
-From a real 15-year Instapaper archive:
-
-- **84.1%** success rate (7,116 / 8,457 articles)
-- **14.8M** words indexed
-- **~137** articles/minute with 20 concurrent workers
-
 ## Requirements
 
 - Rust toolchain (`cargo`)
