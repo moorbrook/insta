@@ -1,0 +1,166 @@
+use anyhow::Context;
+use rusqlite::{params, Connection};
+use std::path::Path;
+use std::sync::Mutex;
+
+use crate::csv_reader::ArticleRow;
+
+pub struct Database {
+    conn: Mutex<Connection>,
+}
+
+pub struct StatusCounts {
+    pub total: i64,
+    pub success: i64,
+    pub archived: i64,
+    pub failed: i64,
+    pub pending: i64,
+    pub total_words: i64,
+}
+
+impl Database {
+    pub fn open(path: &Path) -> anyhow::Result<Self> {
+        let conn = Connection::open(path).context("Failed to open database")?;
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
+    }
+
+    pub fn init_schema(&self) -> anyhow::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS articles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                url TEXT UNIQUE NOT NULL,
+                title TEXT,
+                folder TEXT,
+                timestamp INTEGER,
+                tags TEXT,
+                filename TEXT,
+                status TEXT DEFAULT 'pending',
+                error_message TEXT,
+                content_preview TEXT,
+                word_count INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE INDEX IF NOT EXISTS idx_url ON articles(url);
+            CREATE INDEX IF NOT EXISTS idx_status ON articles(status);
+            CREATE INDEX IF NOT EXISTS idx_folder ON articles(folder);
+            CREATE VIRTUAL TABLE IF NOT EXISTS articles_fts USING fts5(
+                title, content_preview, content='articles', content_rowid='id'
+            );",
+        )?;
+        Ok(())
+    }
+
+    pub fn is_already_successful(&self, url: &str) -> anyhow::Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare_cached("SELECT 1 FROM articles WHERE url = ? AND status = 'success'")?;
+        Ok(stmt.exists(params![url])?)
+    }
+
+    pub fn is_already_failed(&self, url: &str) -> anyhow::Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare_cached("SELECT 1 FROM articles WHERE url = ? AND status = 'failed'")?;
+        Ok(stmt.exists(params![url])?)
+    }
+
+    pub fn insert_pending(&self, row: &ArticleRow) -> anyhow::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let timestamp: Option<i64> = row.timestamp.parse().ok();
+        conn.execute(
+            "INSERT OR REPLACE INTO articles (url, title, folder, timestamp, tags, status)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
+            params![row.url, row.title, row.folder, timestamp, row.tags],
+        )?;
+        Ok(())
+    }
+
+    pub fn mark_success(
+        &self,
+        url: &str,
+        title: &str,
+        filename: &str,
+        preview: &str,
+        word_count: i64,
+        is_archived: bool,
+    ) -> anyhow::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let status = if is_archived { "archived" } else { "success" };
+        conn.execute(
+            "UPDATE articles SET status = ?1, title = ?2, filename = ?3,
+             content_preview = ?4, word_count = ?5 WHERE url = ?6",
+            params![status, title, filename, preview, word_count, url],
+        )?;
+        // Update FTS index
+        conn.execute(
+            "INSERT INTO articles_fts(rowid, title, content_preview)
+             SELECT id, title, content_preview FROM articles WHERE url = ?1",
+            params![url],
+        )?;
+        Ok(())
+    }
+
+    pub fn mark_failed(&self, url: &str, error: &str) -> anyhow::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE articles SET status = 'failed', error_message = ?1 WHERE url = ?2",
+            params![error, url],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_status_counts(&self) -> anyhow::Result<StatusCounts> {
+        let conn = self.conn.lock().unwrap();
+        let total: i64 = conn.query_row("SELECT COUNT(*) FROM articles", [], |r| r.get(0))?;
+        let success: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM articles WHERE status IN ('success', 'archived')",
+            [],
+            |r| r.get(0),
+        )?;
+        let archived: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM articles WHERE status = 'archived'",
+            [],
+            |r| r.get(0),
+        )?;
+        let failed: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM articles WHERE status = 'failed'",
+            [],
+            |r| r.get(0),
+        )?;
+        let pending: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM articles WHERE status = 'pending'",
+            [],
+            |r| r.get(0),
+        )?;
+        let total_words: i64 = conn.query_row(
+            "SELECT COALESCE(SUM(word_count), 0) FROM articles WHERE status IN ('success', 'archived')",
+            [],
+            |r| r.get(0),
+        )?;
+        Ok(StatusCounts {
+            total,
+            success,
+            archived,
+            failed,
+            pending,
+            total_words,
+        })
+    }
+
+    pub fn get_failed_urls(&self, limit: usize) -> anyhow::Result<Vec<(String, Option<String>)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT url, error_message FROM articles WHERE status = 'failed' LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![limit as i64], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        })?;
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(row?);
+        }
+        Ok(result)
+    }
+}
