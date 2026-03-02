@@ -9,6 +9,14 @@ pub struct Database {
     conn: Mutex<Connection>,
 }
 
+pub struct SearchResult {
+    pub title: Option<String>,
+    pub url: String,
+    pub folder: Option<String>,
+    pub word_count: Option<i64>,
+    pub snippet: String,
+}
+
 pub struct StatusCounts {
     pub total: i64,
     pub success: i64,
@@ -172,6 +180,47 @@ impl Database {
             pending,
             total_words,
         })
+    }
+
+    pub fn search(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> anyhow::Result<Vec<SearchResult>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT a.title, a.url, a.folder, a.word_count,
+                    snippet(articles_fts, 1, '>>>','<<<', '...', 30) as snip
+             FROM articles_fts
+             JOIN articles a ON a.id = articles_fts.rowid
+             WHERE articles_fts MATCH ?1
+             ORDER BY rank
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![query, limit as i64], |row| {
+            Ok(SearchResult {
+                title: row.get(0)?,
+                url: row.get(1)?,
+                folder: row.get::<_, Option<String>>(2)?,
+                word_count: row.get::<_, Option<i64>>(3)?,
+                snippet: row.get(4)?,
+            })
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    pub fn read_content(&self, url: &str) -> anyhow::Result<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare_cached("SELECT content FROM articles WHERE url = ?1")?;
+        let result = stmt
+            .query_row(params![url], |row| row.get::<_, Option<String>>(0))
+            .ok()
+            .flatten();
+        Ok(result)
     }
 
     pub fn get_failed_urls(&self, limit: usize) -> anyhow::Result<Vec<(String, Option<String>)>> {

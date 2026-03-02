@@ -8,6 +8,7 @@ mod paywall;
 mod trafilatura;
 
 use clap::Parser;
+use cli::Command;
 use extractor::ExtractionResult;
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
@@ -18,26 +19,51 @@ use std::time::Instant;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = cli::Args::parse();
+
+    match args.command {
+        Command::Download {
+            csv_file,
+            output_dir,
+            workers,
+            retries,
+            timeout,
+            retry_failed,
+        } => {
+            cmd_download(csv_file, output_dir, workers, retries, timeout, retry_failed).await
+        }
+        Command::Search {
+            query,
+            db_dir,
+            limit,
+            full,
+        } => cmd_search(&query.join(" "), &db_dir, limit, full),
+        Command::Stats { db_dir } => cmd_stats(&db_dir),
+    }
+}
+
+async fn cmd_download(
+    csv_file: std::path::PathBuf,
+    output_dir: std::path::PathBuf,
+    workers: usize,
+    retries: u32,
+    timeout: u64,
+    retry_failed: bool,
+) -> anyhow::Result<()> {
     let start = Instant::now();
 
-    // Create output directory
-    tokio::fs::create_dir_all(&args.output_dir).await?;
+    tokio::fs::create_dir_all(&output_dir).await?;
 
-    // Initialize database
-    let db_path = args.output_dir.join("index.db");
+    let db_path = output_dir.join("index.db");
     let db = Arc::new(db::Database::open(&db_path)?);
     db.init_schema()?;
 
-    println!("Instapaper Article Downloader (Rust)");
+    println!("Instapaper Article Downloader");
     println!("{}", "=".repeat(60));
 
-    // Load CSV
-    println!("Loading articles from {}...", args.csv_file.display());
-    let all_rows = csv_reader::read_csv(&args.csv_file)?;
+    println!("Loading articles from {}...", csv_file.display());
+    let all_rows = csv_reader::read_csv(&csv_file)?;
     println!("Loaded {} articles from CSV", all_rows.len());
 
-    // Use rayon to parallelize the filtering (DB lookups for each URL)
-    let retry_failed = args.retry_failed;
     let to_process: Vec<_> = {
         let db_ref = &db;
         all_rows
@@ -55,7 +81,6 @@ async fn main() -> anyhow::Result<()> {
             .collect()
     };
 
-    // Insert pending entries (sequential - DB writes)
     for row in &to_process {
         db.insert_pending(row)?;
     }
@@ -66,10 +91,9 @@ async fn main() -> anyhow::Result<()> {
     }
 
     println!("Found {} articles to download", to_process.len());
-    println!("Using {} concurrent workers", args.workers);
+    println!("Using {} concurrent workers", workers);
     println!("{}\n", "=".repeat(60));
 
-    // Progress bar
     let pb = ProgressBar::new(to_process.len() as u64);
     pb.set_style(
         ProgressStyle::default_bar()
@@ -81,16 +105,14 @@ async fn main() -> anyhow::Result<()> {
     let success_count = Arc::new(AtomicU64::new(0));
     let failed_count = Arc::new(AtomicU64::new(0));
 
-    // Create extractor
     let ext = Arc::new(extractor::Extractor::new(
         db.clone(),
-        args.output_dir.clone(),
-        args.workers,
-        args.retries,
-        args.timeout,
+        output_dir.clone(),
+        workers,
+        retries,
+        timeout,
     ));
 
-    // Spawn all tasks - tokio handles async I/O concurrency via semaphore
     let mut handles = Vec::with_capacity(to_process.len());
     for row in to_process {
         let ext = ext.clone();
@@ -116,20 +138,103 @@ async fn main() -> anyhow::Result<()> {
         }));
     }
 
-    // Await all tasks
     for handle in handles {
         let _ = handle.await;
     }
     pb.finish_with_message("Done");
 
-    // Generate report
     let elapsed = start.elapsed().as_secs_f64();
-    generate_report(&db, elapsed)?;
+    print_report(&db, elapsed)?;
 
     Ok(())
 }
 
-fn generate_report(db: &db::Database, elapsed: f64) -> anyhow::Result<()> {
+fn cmd_search(
+    query: &str,
+    db_dir: &std::path::Path,
+    limit: usize,
+    full: bool,
+) -> anyhow::Result<()> {
+    let db_path = db_dir.join("index.db");
+    let db = db::Database::open(&db_path)?;
+
+    let results = db.search(query, limit)?;
+
+    if results.is_empty() {
+        println!("No results for: {query}");
+        return Ok(());
+    }
+
+    println!("Found {} result(s) for: {query}\n", results.len());
+
+    for (i, r) in results.iter().enumerate() {
+        let title = r.title.as_deref().unwrap_or("Untitled");
+        let words = r
+            .word_count
+            .map(|w| format!("{w} words"))
+            .unwrap_or_default();
+        let folder = r.folder.as_deref().unwrap_or("");
+
+        println!("{}. {}", i + 1, title);
+        println!("   {}", r.url);
+        if !folder.is_empty() || !words.is_empty() {
+            let meta: Vec<&str> = [folder, &words]
+                .into_iter()
+                .filter(|s| !s.is_empty())
+                .collect();
+            println!("   [{}]", meta.join(" | "));
+        }
+
+        if full {
+            if let Ok(Some(content)) = db.read_content(&r.url) {
+                println!("\n{content}\n");
+                println!("{}", "-".repeat(60));
+            }
+        } else {
+            // Format snippet: replace >>> <<< with terminal bold
+            let snippet = r
+                .snippet
+                .replace(">>>", "\x1b[1;33m")
+                .replace("<<<", "\x1b[0m");
+            println!("   {snippet}");
+        }
+        println!();
+    }
+
+    Ok(())
+}
+
+fn cmd_stats(db_dir: &std::path::Path) -> anyhow::Result<()> {
+    let db_path = db_dir.join("index.db");
+    let db = db::Database::open(&db_path)?;
+    let counts = db.get_status_counts()?;
+
+    println!("Instapaper Archive Stats");
+    println!("{}", "=".repeat(40));
+    println!("Total articles:  {}", counts.total);
+    if counts.total > 0 {
+        println!(
+            "Successful:      {} ({:.1}%)",
+            counts.success,
+            counts.success as f64 / counts.total as f64 * 100.0
+        );
+        if counts.archived > 0 {
+            println!("  From Archives: {}", counts.archived);
+        }
+        println!(
+            "Failed:          {} ({:.1}%)",
+            counts.failed,
+            counts.failed as f64 / counts.total as f64 * 100.0
+        );
+        println!("Pending:         {}", counts.pending);
+        println!("Total words:     {}", counts.total_words);
+    }
+    println!("{}", "=".repeat(40));
+
+    Ok(())
+}
+
+fn print_report(db: &db::Database, elapsed: f64) -> anyhow::Result<()> {
     let counts = db.get_status_counts()?;
 
     println!("\n{}", "=".repeat(60));
@@ -163,7 +268,6 @@ fn generate_report(db: &db::Database, elapsed: f64) -> anyhow::Result<()> {
     }
     println!("{}", "=".repeat(60));
 
-    // Show failed URLs
     let failed_urls = db.get_failed_urls(10)?;
     if !failed_urls.is_empty() {
         println!("\nFailed URLs (first 10):");
