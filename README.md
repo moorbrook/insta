@@ -4,15 +4,17 @@ A fast Rust CLI for archiving your entire Instapaper library locally with full-t
 
 Downloads articles from an Instapaper CSV export, extracts clean text using a multi-tier extraction pipeline, and stores everything in a searchable SQLite database with FTS5.
 
-## Requirements
-
-- Rust toolchain (`cargo`)
-- `yt-dlp` (optional, for YouTube transcripts)
-
 ## Install
+
+Requires a [Rust toolchain](https://rustup.rs/). Then:
 
 ```bash
 cargo install --git https://github.com/moorbrook/insta
+```
+
+Optional: install [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) for YouTube transcript extraction:
+```bash
+uv tool install yt-dlp
 ```
 
 ## Quick Start
@@ -56,6 +58,13 @@ insta download export.csv -o ~/archive      # custom output directory
 | `--retry-failed` | off | Re-attempt previously failed articles |
 
 Automatically skips articles already marked as successful. Safe to run multiple times with updated exports.
+
+If you use a custom output directory (`-o`), pass the same path to other commands with `-d`:
+```bash
+insta download export.csv -o ~/archive
+insta search "query" -d ~/archive
+insta stats -d ~/archive
+```
 
 ### `insta search <QUERY>`
 
@@ -105,7 +114,7 @@ For each article, `insta` tries these strategies in order, with automatic fallba
 1. **YouTube** — transcript extraction via `yt-dlp` (auto-generated or manual subtitles)
 2. **GitHub** — README via API for repos, raw content for blob files
 3. **Scraper-hostile domains** (Medium, etc.) — archive.ph first
-4. **Paywalled sites** — Instapaper API `get_text` (requires OAuth setup via `insta login`, WIP)
+4. **Paywalled sites** — Instapaper API `get_text` (not yet implemented, see [API Integration](#instapaper-api-integration-wip) below)
 5. **Primary extraction** — multi-tier HTML pipeline:
    - Tier 1: JSON-LD `articleBody` (fast path for structured pages)
    - Tier 2: CSS-targeted extraction with content scoring (50+ selectors)
@@ -149,7 +158,7 @@ sqlite3 articles/index.db "SELECT title FROM articles WHERE url LIKE '%nytimes.c
 
 The [Instapaper Full API](https://www.instapaper.com/api/full) can recover articles that scraping can't reach — dead sites, paywalled content, and scraper-hostile domains — by fetching the permanently archived copy that Instapaper stored at save time. Requires a Premium subscription and OAuth credentials.
 
-Planned commands:
+Planned commands (not yet implemented):
 - `insta login` — authenticate via xAuth, cache OAuth tokens
 - `insta repair` — re-fetch failed articles using the API's `get_text` endpoint
 
@@ -164,7 +173,7 @@ These are expected failures without the Instapaper API configured:
 
 ## Deprecated Python Version
 
-The original Python implementation (`download_articles.py`, `analyze_bookmarks.py`, `paywalled_sites.py`) is deprecated. Use the Rust CLI instead — it's faster, has more extraction strategies, and includes built-in search.
+The original Python implementation is deprecated and has been removed from the repo (available in git history). Use the Rust CLI instead — it's faster, has more extraction strategies, and includes built-in search. The `analyze_bookmarks.py` data visualization script is kept as a standalone tool that reads from the same SQLite database.
 
 ## Credits
 

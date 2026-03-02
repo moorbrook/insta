@@ -32,7 +32,7 @@ impl Extractor {
     pub fn new(
         db: Arc<Database>,
         output_dir: PathBuf,
-        workers: usize,
+        workers: u32,
         retries: u32,
         timeout_secs: u64,
     ) -> Self {
@@ -45,7 +45,7 @@ impl Extractor {
             client,
             db,
             output_dir,
-            semaphore: Arc::new(Semaphore::new(workers)),
+            semaphore: Arc::new(Semaphore::new(workers as usize)),
             retries,
             timeout: Duration::from_secs(timeout_secs),
         }

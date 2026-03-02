@@ -44,7 +44,7 @@ async fn main() -> anyhow::Result<()> {
 async fn cmd_download(
     csv_file: std::path::PathBuf,
     output_dir: std::path::PathBuf,
-    workers: usize,
+    workers: u32,
     retries: u32,
     timeout: u64,
     retry_failed: bool,
@@ -149,13 +149,25 @@ async fn cmd_download(
     Ok(())
 }
 
+fn open_db(db_dir: &std::path::Path) -> anyhow::Result<db::Database> {
+    let db_path = db_dir.join("index.db");
+    if !db_path.exists() {
+        anyhow::bail!(
+            "No database found at {}\nRun `insta download <export.csv>` first to build the article index.",
+            db_path.display()
+        );
+    }
+    let db = db::Database::open(&db_path)?;
+    db.ensure_schema()?;
+    Ok(db)
+}
+
 fn cmd_search(
     query: &str,
     db_dir: &std::path::Path,
     limit: usize,
 ) -> anyhow::Result<()> {
-    let db_path = db_dir.join("index.db");
-    let db = db::Database::open(&db_path)?;
+    let db = open_db(db_dir)?;
 
     let results = db.search(query, limit)?;
 
@@ -198,8 +210,7 @@ fn cmd_search(
 }
 
 fn cmd_read(id: i64, db_dir: &std::path::Path) -> anyhow::Result<()> {
-    let db_path = db_dir.join("index.db");
-    let db = db::Database::open(&db_path)?;
+    let db = open_db(db_dir)?;
 
     match db.read_by_id(id)? {
         Some(article) => {
@@ -223,8 +234,7 @@ fn cmd_read(id: i64, db_dir: &std::path::Path) -> anyhow::Result<()> {
 }
 
 fn cmd_stats(db_dir: &std::path::Path) -> anyhow::Result<()> {
-    let db_path = db_dir.join("index.db");
-    let db = db::Database::open(&db_path)?;
+    let db = open_db(db_dir)?;
     let counts = db.get_status_counts()?;
 
     println!("Instapaper Archive Stats");

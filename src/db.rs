@@ -102,6 +102,20 @@ impl Database {
         Ok(())
     }
 
+    /// Check that required tables exist, bail with a friendly message if not.
+    pub fn ensure_schema(&self) -> anyhow::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let has_table: bool = conn
+            .prepare("SELECT 1 FROM articles LIMIT 0")
+            .is_ok();
+        if !has_table {
+            anyhow::bail!(
+                "Database exists but has no articles table.\nRun `insta download <export.csv>` first."
+            );
+        }
+        Ok(())
+    }
+
     pub fn is_already_successful(&self, url: &str) -> anyhow::Result<bool> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare_cached("SELECT 1 FROM articles WHERE url = ? AND status = 'success'")?;

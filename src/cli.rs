@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
-#[command(name = "insta", about = "Instapaper article downloader and search engine")]
+#[command(name = "insta", version, about = "Instapaper article downloader and search engine")]
 pub struct Args {
     #[command(subcommand)]
     pub command: Command,
@@ -20,15 +20,15 @@ pub enum Command {
         output_dir: PathBuf,
 
         /// Maximum concurrent downloads
-        #[arg(short = 'j', long, default_value_t = 20)]
-        workers: usize,
+        #[arg(short = 'j', long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(1..))]
+        workers: u32,
 
         /// Maximum retries per article
-        #[arg(short, long, default_value_t = 3)]
+        #[arg(short, long, default_value_t = 3, value_parser = clap::value_parser!(u32).range(1..))]
         retries: u32,
 
         /// HTTP request timeout in seconds
-        #[arg(short, long, default_value_t = 30)]
+        #[arg(short, long, default_value_t = 30, value_parser = clap::value_parser!(u64).range(1..))]
         timeout: u64,
 
         /// Re-attempt previously failed articles
@@ -39,6 +39,7 @@ pub enum Command {
     /// Full-text search across all downloaded articles
     Search {
         /// Search query (supports FTS5 syntax: quotes for phrases, OR, NOT)
+        #[arg(required = true, num_args = 1..)]
         query: Vec<String>,
 
         /// Path to articles directory containing index.db
