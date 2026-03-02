@@ -31,7 +31,7 @@ from paywalled_sites import is_paywalled, get_paywalled_domain
 
 
 # Configuration
-CSV_FILE = "Instapaper-Export-2025-10-19_02_13_29.csv"
+CSV_FILE = "Instapaper-Export-2025-12-12_09_11_55.csv"
 OUTPUT_DIR = Path("articles")
 DB_FILE = OUTPUT_DIR / "index.db"
 MAX_WORKERS = 20
