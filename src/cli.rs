@@ -48,10 +48,16 @@ pub enum Command {
         /// Maximum number of results
         #[arg(short = 'n', long, default_value_t = 10)]
         limit: usize,
+    },
 
-        /// Show full content instead of snippets
-        #[arg(long)]
-        full: bool,
+    /// Read full article content by ID
+    Read {
+        /// Article ID (shown in search results as [ID])
+        id: i64,
+
+        /// Path to articles directory containing index.db
+        #[arg(short, long, default_value = "articles")]
+        db_dir: PathBuf,
     },
 
     /// Show statistics about the article database

@@ -35,8 +35,8 @@ async fn main() -> anyhow::Result<()> {
             query,
             db_dir,
             limit,
-            full,
-        } => cmd_search(&query.join(" "), &db_dir, limit, full),
+        } => cmd_search(&query.join(" "), &db_dir, limit),
+        Command::Read { id, db_dir } => cmd_read(id, &db_dir),
         Command::Stats { db_dir } => cmd_stats(&db_dir),
     }
 }
@@ -153,7 +153,6 @@ fn cmd_search(
     query: &str,
     db_dir: &std::path::Path,
     limit: usize,
-    full: bool,
 ) -> anyhow::Result<()> {
     let db_path = db_dir.join("index.db");
     let db = db::Database::open(&db_path)?;
@@ -167,7 +166,7 @@ fn cmd_search(
 
     println!("Found {} result(s) for: {query}\n", results.len());
 
-    for (i, r) in results.iter().enumerate() {
+    for r in &results {
         let title = r.title.as_deref().unwrap_or("Untitled");
         let words = r
             .word_count
@@ -175,30 +174,49 @@ fn cmd_search(
             .unwrap_or_default();
         let folder = r.folder.as_deref().unwrap_or("");
 
-        println!("{}. {}", i + 1, title);
-        println!("   {}", r.url);
+        println!("[{}] {}", r.id, title);
+        println!("    {}", r.url);
         if !folder.is_empty() || !words.is_empty() {
             let meta: Vec<&str> = [folder, &words]
                 .into_iter()
                 .filter(|s| !s.is_empty())
                 .collect();
-            println!("   [{}]", meta.join(" | "));
+            println!("    [{}]", meta.join(" | "));
         }
 
-        if full {
-            if let Ok(Some(content)) = db.read_content(&r.url) {
-                println!("\n{content}\n");
-                println!("{}", "-".repeat(60));
-            }
-        } else {
-            // Format snippet: replace >>> <<< with terminal bold
-            let snippet = r
-                .snippet
-                .replace(">>>", "\x1b[1;33m")
-                .replace("<<<", "\x1b[0m");
-            println!("   {snippet}");
-        }
+        let snippet = r
+            .snippet
+            .replace(">>>", "\x1b[1;33m")
+            .replace("<<<", "\x1b[0m");
+        println!("    {snippet}");
         println!();
+    }
+
+    println!("Use `insta read <ID>` to view full article content.");
+
+    Ok(())
+}
+
+fn cmd_read(id: i64, db_dir: &std::path::Path) -> anyhow::Result<()> {
+    let db_path = db_dir.join("index.db");
+    let db = db::Database::open(&db_path)?;
+
+    match db.read_by_id(id)? {
+        Some(article) => {
+            let title = article.title.as_deref().unwrap_or("Untitled");
+            let words = article.word_count.unwrap_or(0);
+            println!("{title}");
+            println!("{}", article.url);
+            println!("[{words} words]\n");
+            println!("{}", "=".repeat(60));
+            match article.content {
+                Some(content) if !content.is_empty() => println!("{content}"),
+                _ => println!("(no content available)"),
+            }
+        }
+        None => {
+            println!("No article found with ID {id}");
+        }
     }
 
     Ok(())

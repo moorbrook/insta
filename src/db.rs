@@ -10,11 +10,21 @@ pub struct Database {
 }
 
 pub struct SearchResult {
+    pub id: i64,
     pub title: Option<String>,
     pub url: String,
     pub folder: Option<String>,
     pub word_count: Option<i64>,
     pub snippet: String,
+}
+
+pub struct Article {
+    pub id: i64,
+    pub title: Option<String>,
+    pub url: String,
+    pub folder: Option<String>,
+    pub word_count: Option<i64>,
+    pub content: Option<String>,
 }
 
 pub struct StatusCounts {
@@ -189,7 +199,7 @@ impl Database {
     ) -> anyhow::Result<Vec<SearchResult>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT a.title, a.url, a.folder, a.word_count,
+            "SELECT a.id, a.title, a.url, a.folder, a.word_count,
                     snippet(articles_fts, 1, '>>>','<<<', '...', 30) as snip
              FROM articles_fts
              JOIN articles a ON a.id = articles_fts.rowid
@@ -199,11 +209,12 @@ impl Database {
         )?;
         let rows = stmt.query_map(params![query, limit as i64], |row| {
             Ok(SearchResult {
-                title: row.get(0)?,
-                url: row.get(1)?,
-                folder: row.get::<_, Option<String>>(2)?,
-                word_count: row.get::<_, Option<i64>>(3)?,
-                snippet: row.get(4)?,
+                id: row.get(0)?,
+                title: row.get(1)?,
+                url: row.get(2)?,
+                folder: row.get::<_, Option<String>>(3)?,
+                word_count: row.get::<_, Option<i64>>(4)?,
+                snippet: row.get(5)?,
             })
         })?;
         let mut results = Vec::new();
@@ -213,13 +224,23 @@ impl Database {
         Ok(results)
     }
 
-    pub fn read_content(&self, url: &str) -> anyhow::Result<Option<String>> {
+    pub fn read_by_id(&self, id: i64) -> anyhow::Result<Option<Article>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare_cached("SELECT content FROM articles WHERE url = ?1")?;
+        let mut stmt = conn.prepare_cached(
+            "SELECT id, title, url, folder, word_count, content FROM articles WHERE id = ?1",
+        )?;
         let result = stmt
-            .query_row(params![url], |row| row.get::<_, Option<String>>(0))
-            .ok()
-            .flatten();
+            .query_row(params![id], |row| {
+                Ok(Article {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    url: row.get(2)?,
+                    folder: row.get(3)?,
+                    word_count: row.get(4)?,
+                    content: row.get(5)?,
+                })
+            })
+            .ok();
         Ok(result)
     }
 
