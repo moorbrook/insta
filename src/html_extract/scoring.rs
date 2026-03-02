@@ -2,7 +2,6 @@
 //!
 //! Identifies main content areas using CSS selectors targeting common content
 //! containers, then scores candidates by text density vs link density.
-//! Ported from trafilatura's main_extractor.py logic.
 
 use scraper::{Html, Selector};
 use std::collections::HashSet;
@@ -13,7 +12,6 @@ pub struct ContentCandidate {
 }
 
 /// CSS selectors for likely content containers, in priority order.
-/// Based on trafilatura's BODY_XPATH patterns.
 const CONTENT_SELECTORS: &[&str] = &[
     // High confidence: specific article content containers
     "article",
@@ -57,8 +55,8 @@ const CONTENT_SELECTORS: &[&str] = &[
     "[class*='rich-text']",
 ];
 
-/// Selectors for elements that should be excluded from text extraction
-/// even within content areas (trafilatura's prune_unwanted_sections).
+/// Selectors for elements that should be excluded from text extraction,
+/// even within content areas.
 const UNWANTED_WITHIN_CONTENT: &[&str] = &[
     "nav",
     "footer",

@@ -24,8 +24,8 @@ pub async fn extract(
         return Ok(None);
     }
 
-    // Use our trafilatura-style multi-tier extraction
-    match crate::trafilatura::extract(&html, url_str) {
+    // Multi-tier HTML content extraction
+    match crate::html_extract::extract(&html, url_str) {
         Some(result) => {
             let title = if result.title.is_empty() || result.title == "Untitled" {
                 "Untitled".to_string()

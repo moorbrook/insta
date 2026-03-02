@@ -1,7 +1,7 @@
 //! HTML cleaning and boilerplate removal.
 //!
 //! Removes known boilerplate elements (nav, footer, ads, cookie banners, etc.)
-//! before content extraction. Ported from trafilatura's htmlprocessing.py.
+//! before content extraction.
 
 use regex::Regex;
 use std::sync::LazyLock;

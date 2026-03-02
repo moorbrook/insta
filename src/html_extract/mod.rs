@@ -1,4 +1,7 @@
-//! Rust port of trafilatura's multi-tier extraction pipeline.
+//! Multi-tier HTML content extraction pipeline.
+//!
+//! Ported to Rust from [trafilatura](https://github.com/adbar/trafilatura)
+//! by Adrien Barbaresi, licensed under Apache 2.0.
 //!
 //! Extraction order:
 //! 1. JSON-LD articleBody (structured data)
@@ -14,7 +17,7 @@ use cleaning::clean_html;
 use jsonld::extract_jsonld_body;
 use scoring::extract_main_content;
 
-/// Result of trafilatura-style extraction.
+/// Result of HTML content extraction.
 pub struct ExtractionResult {
     pub title: String,
     pub text: String,

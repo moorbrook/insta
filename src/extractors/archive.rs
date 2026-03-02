@@ -90,8 +90,8 @@ pub async fn extract(
 
     let html = response.text().await?;
 
-    // Use trafilatura-style extraction on the archived page
-    match crate::trafilatura::extract(&html, &snapshot_url) {
+    // Extract content from the archived page
+    match crate::html_extract::extract(&html, &snapshot_url) {
         Some(result) => {
             let title = if result.title.is_empty() || result.title == "Untitled" {
                 "Untitled".to_string()

@@ -154,7 +154,7 @@ impl Extractor {
             }
         }
 
-        // 5. Primary extraction (trafilatura pipeline)
+        // 5. Primary extraction (multi-tier HTML pipeline)
         if let Some(article) = readability::extract(&self.client, url, self.timeout).await? {
             return Ok(Some(article));
         }

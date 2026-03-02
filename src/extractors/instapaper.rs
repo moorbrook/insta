@@ -32,8 +32,8 @@ pub async fn extract(
         return Ok(None);
     }
 
-    // Instapaper returns a clean HTML page - extract with our trafilatura pipeline
-    match crate::trafilatura::extract(&html, &instapaper_url) {
+    // Instapaper returns a clean HTML page - extract content
+    match crate::html_extract::extract(&html, &instapaper_url) {
         Some(result) => {
             if result.text.len() < 50 {
                 return Ok(None);

@@ -1,0 +1,18 @@
+Third-Party Software Notices
+============================
+
+This project includes code derived from the following:
+
+trafilatura
+-----------
+The HTML content extraction pipeline (src/html_extract/) is ported to Rust
+from trafilatura by Adrien Barbaresi.
+
+  Source: https://github.com/adbar/trafilatura
+  License: Apache License 2.0
+  Copyright: (c) Adrien Barbaresi
+
+  Changes made: Ported from Python to Rust. Reimplemented the multi-tier
+  extraction pipeline (JSON-LD, CSS-targeted scoring, baseline fallback),
+  HTML cleaning, and content scoring heuristics. Not a line-for-line port;
+  adapted to Rust idioms and the scraper/readability crate ecosystem.

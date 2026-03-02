@@ -5,7 +5,7 @@ mod extractor;
 mod extractors;
 mod filename;
 mod paywall;
-mod trafilatura;
+mod html_extract;
 
 use clap::Parser;
 use cli::Command;
