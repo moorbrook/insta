@@ -150,6 +150,10 @@ sqlite3 articles/index.db "SELECT url, error_message FROM articles WHERE status=
 sqlite3 articles/index.db "SELECT title FROM articles WHERE url LIKE '%nytimes.com%'"
 ```
 
+## Agent-Friendly
+
+`insta` is designed for agentic search workflows. AI agents (Claude, Codex, Gemini, etc.) can `insta search` to find relevant articles from your personal reading history, `insta read` to pull full text into context, and `insta stats` to check coverage — all through the CLI with structured, parseable output. Your Instapaper archive becomes a searchable knowledge base that agents can query autonomously.
+
 ## Instapaper API Integration (WIP)
 
 The [Instapaper Full API](https://www.instapaper.com/api/full) can recover articles that scraping can't reach — dead sites, paywalled content, and scraper-hostile domains — by fetching the permanently archived copy that Instapaper stored at save time. Requires a Premium subscription and OAuth credentials.
