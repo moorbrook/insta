@@ -1,48 +1,31 @@
-//! Extract article text from Instapaper's text cache.
+//! Retrieve article text via the Instapaper Full API.
 //!
-//! Instapaper caches a clean text version of every saved article.
-//! We can fetch it from their public text endpoint.
+//! Uses OAuth 1.0a authentication and the /api/1/bookmarks/get_text endpoint
+//! to fetch the permanently archived article content that Instapaper stored
+//! at save time. Requires a Premium subscription.
+//!
+//! API docs: https://www.instapaper.com/api/full
+//!
+//! TODO: Implement OAuth xAuth token exchange (insta login)
+//! TODO: Implement bookmarks/list to build URL -> bookmark_id mapping
+//! TODO: Implement get_text(bookmark_id) to fetch archived content
 
 use super::ExtractedArticle;
 use std::time::Duration;
 
-const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-
+/// Retrieve article text from Instapaper's permanent archive via API.
+///
+/// Requires a valid OAuth token (obtained via `insta login`) and a
+/// bookmark_id (resolved from URL via bookmarks/list).
+///
+/// Returns None until the API client is implemented.
 pub async fn extract(
-    client: &reqwest::Client,
-    url: &str,
-    timeout: Duration,
+    _client: &reqwest::Client,
+    _url: &str,
+    _timeout: Duration,
 ) -> anyhow::Result<Option<ExtractedArticle>> {
-    let encoded_url = urlencoding::encode(url);
-    let instapaper_url = format!("https://www.instapaper.com/text?u={encoded_url}");
-
-    let response = client
-        .get(&instapaper_url)
-        .timeout(timeout)
-        .header("User-Agent", USER_AGENT)
-        .send()
-        .await?;
-
-    if !response.status().is_success() {
-        return Ok(None);
-    }
-
-    let html = response.text().await?;
-    if html.is_empty() {
-        return Ok(None);
-    }
-
-    // Instapaper returns a clean HTML page - extract content
-    match crate::html_extract::extract(&html, &instapaper_url) {
-        Some(result) => {
-            if result.text.len() < 50 {
-                return Ok(None);
-            }
-            Ok(Some(ExtractedArticle {
-                title: result.title,
-                content: result.text,
-            }))
-        }
-        None => Ok(None),
-    }
+    // TODO: Look up bookmark_id for this URL from cached mapping
+    // TODO: Call /api/1/bookmarks/get_text with OAuth signature
+    // TODO: Run returned HTML through crate::html_extract::extract()
+    Ok(None)
 }

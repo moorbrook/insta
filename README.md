@@ -114,8 +114,8 @@ For each article, `insta` tries these strategies in order, with automatic fallba
 1. **YouTube** — transcript extraction via `yt-dlp` (auto-generated or manual subtitles)
 2. **GitHub** — README via API for repos, raw content for blob files
 3. **Scraper-hostile domains** (Medium, etc.) — archive.ph first
-4. **Paywalled sites** — Instapaper's public text cache
-5. **Primary extraction** — custom trafilatura-style pipeline:
+4. **Paywalled sites** — Instapaper API `get_text` (requires OAuth setup via `insta login`, WIP)
+5. **Primary extraction** — multi-tier HTML pipeline:
    - Tier 1: JSON-LD `articleBody` (fast path for structured pages)
    - Tier 2: CSS-targeted extraction with content scoring (50+ selectors)
    - Tier 3: Mozilla Readability (recovers ~32% of tier 2 failures)
@@ -150,9 +150,17 @@ sqlite3 articles/index.db "SELECT url, error_message FROM articles WHERE status=
 sqlite3 articles/index.db "SELECT title FROM articles WHERE url LIKE '%nytimes.com%'"
 ```
 
+## Instapaper API Integration (WIP)
+
+The [Instapaper Full API](https://www.instapaper.com/api/full) can recover articles that scraping can't reach — dead sites, paywalled content, and scraper-hostile domains — by fetching the permanently archived copy that Instapaper stored at save time. Requires a Premium subscription and OAuth credentials.
+
+Planned commands:
+- `insta login` — authenticate via xAuth, cache OAuth tokens
+- `insta repair` — re-fetch failed articles using the API's `get_text` endpoint
+
 ## Known Limitations
 
-These are expected failures — content that can't be extracted by scraping:
+These are expected failures without the Instapaper API configured:
 
 - **Paywalled articles** — NYTimes, Bloomberg, WSJ, Economist, and ~85 other domains are detected but content is behind login walls
 - **Dead links / 404s** — sites that have gone offline since bookmarking

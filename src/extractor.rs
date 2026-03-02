@@ -145,7 +145,7 @@ impl Extractor {
             }
         }
 
-        // 4. Paywalled sites -> try Instapaper text cache
+        // 4. Paywalled sites -> try Instapaper API (requires OAuth setup via `insta login`)
         if is_paywalled(url) {
             if let Some(article) =
                 instapaper::extract(&self.client, url, self.timeout).await?
