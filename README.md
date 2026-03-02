@@ -9,11 +9,10 @@ Downloads articles from an Instapaper CSV export, extracts clean text using a mu
 - Rust toolchain (`cargo`)
 - `yt-dlp` (optional, for YouTube transcripts)
 
-## Build
+## Install
 
 ```bash
-cargo build --release
-# Binary at target/release/insta
+cargo install --git https://github.com/moorbrook/insta
 ```
 
 ## Quick Start
