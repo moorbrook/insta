@@ -88,7 +88,7 @@ pub async fn extract(
         return Ok(None);
     }
 
-    let html = response.text().await?;
+    let html = super::read_body(response).await?;
 
     // Extract content from the archived page
     match crate::html_extract::extract(&html, &snapshot_url) {

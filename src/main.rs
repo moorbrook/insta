@@ -139,7 +139,10 @@ async fn cmd_download(
     }
 
     for handle in handles {
-        let _ = handle.await;
+        if let Err(e) = handle.await {
+            eprintln!("Warning: download task panicked: {e}");
+            failed_count.fetch_add(1, Ordering::Relaxed);
+        }
     }
     pb.finish_with_message("Done");
 

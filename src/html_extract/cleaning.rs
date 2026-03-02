@@ -1,12 +1,14 @@
 //! HTML cleaning and boilerplate removal.
 //!
-//! Removes known boilerplate elements (nav, footer, ads, cookie banners, etc.)
-//! before content extraction.
+//! Identifies known boilerplate elements (nav, footer, ads, cookie banners, etc.)
+//! for exclusion during content extraction. Uses DOM traversal for correctness
+//! with nested and malformed HTML.
 
-use regex::Regex;
+use scraper::{Html, Selector};
+use std::collections::HashSet;
 use std::sync::LazyLock;
 
-// Tags to completely remove (with all content)
+/// Tags that are always non-content (scripts, forms, media, etc.)
 const REMOVE_TAGS: &[&str] = &[
     "script", "style", "noscript", "iframe", "object", "embed", "applet",
     "svg", "canvas", "map", "audio", "video", "source", "track",
@@ -14,45 +16,98 @@ const REMOVE_TAGS: &[&str] = &[
     "form", "label", "datalist", "output",
 ];
 
-/// Remove boilerplate elements from HTML, returning cleaned HTML string.
-pub fn clean_html(html: &str) -> String {
-    let mut result = html.to_string();
+/// CSS selectors for structural boilerplate elements.
+const BOILERPLATE_SELECTOR_STRS: &[&str] = &[
+    "nav",
+    "footer",
+    "aside",
+    // Site-level headers
+    "header[class*='site']",
+    "header[id*='site']",
+    "header[class*='main']",
+    "header[id*='main']",
+    "header[class*='global']",
+    "header[id*='global']",
+    "header[class*='page']",
+    "header[id*='page']",
+    // Boilerplate divs by class
+    "div[class*='sidebar']",
+    "div[id*='sidebar']",
+    "div[class*='widget']",
+    "div[id*='widget']",
+    "div[class*='cookie']",
+    "div[id*='cookie']",
+    "div[class*='consent']",
+    "div[id*='consent']",
+    "div[class*='banner']",
+    "div[id*='banner']",
+    "div[class*='modal']",
+    "div[id*='modal']",
+    "div[class*='popup']",
+    "div[id*='popup']",
+    "div[class*='overlay']",
+    "div[id*='overlay']",
+    "div[class*='social-share']",
+    "div[class*='social_share']",
+    "div[class*='sharing']",
+    "div[id*='sharing']",
+    "div[class*='newsletter']",
+    "div[id*='newsletter']",
+    "div[class*='subscribe']",
+    "div[id*='subscribe']",
+    "div[class*='ad-container']",
+    "div[class*='ad_container']",
+    "div[class*='ad-wrapper']",
+    "div[class*='ad_wrapper']",
+    "div[class*='advertisement']",
+    "div[id*='advertisement']",
+    "div[class*='sponsor']",
+    "div[id*='sponsor']",
+    "div[class*='promo']",
+    "div[id*='promo']",
+];
 
-    // Remove entire tags with content
-    for tag in REMOVE_TAGS {
-        let re = Regex::new(&format!(r"(?si)<{tag}[\s>].*?</{tag}>")).unwrap();
-        result = re.replace_all(&result, "").to_string();
+/// Pre-parsed selectors for non-content tags.
+static REMOVE_TAG_SELECTORS: LazyLock<Vec<Selector>> = LazyLock::new(|| {
+    REMOVE_TAGS
+        .iter()
+        .filter_map(|s| Selector::parse(s).ok())
+        .collect()
+});
+
+/// Pre-parsed selectors for boilerplate elements.
+static BOILERPLATE_SELECTORS: LazyLock<Vec<Selector>> = LazyLock::new(|| {
+    BOILERPLATE_SELECTOR_STRS
+        .iter()
+        .filter_map(|s| Selector::parse(s).ok())
+        .collect()
+});
+
+/// Identify all boilerplate node IDs in the document.
+///
+/// Returns a set of node IDs (element + all descendants) that should be
+/// excluded during content extraction.
+pub fn find_boilerplate_ids(doc: &Html) -> HashSet<ego_tree::NodeId> {
+    let mut ids = HashSet::new();
+
+    for sel in REMOVE_TAG_SELECTORS.iter() {
+        for el in doc.select(sel) {
+            add_subtree(&mut ids, &el);
+        }
     }
 
-    // Remove HTML comments
-    static COMMENT_RE: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"(?s)<!--.*?-->").unwrap());
-    result = COMMENT_RE.replace_all(&result, "").to_string();
+    for sel in BOILERPLATE_SELECTORS.iter() {
+        for el in doc.select(sel) {
+            add_subtree(&mut ids, &el);
+        }
+    }
 
-    // Remove structural boilerplate tags
-    static NAV_RE: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"(?si)<nav[\s>].*?</nav>").unwrap());
-    result = NAV_RE.replace_all(&result, "").to_string();
+    ids
+}
 
-    static FOOTER_RE: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"(?si)<footer[\s>].*?</footer>").unwrap());
-    result = FOOTER_RE.replace_all(&result, "").to_string();
-
-    static ASIDE_RE: LazyLock<Regex> =
-        LazyLock::new(|| Regex::new(r"(?si)<aside[\s>].*?</aside>").unwrap());
-    result = ASIDE_RE.replace_all(&result, "").to_string();
-
-    // Remove site-level headers (those with class/id containing site/main/global/page)
-    static HEADER_RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r#"(?si)<header[^>]*(?:class|id)\s*=\s*["'][^"']*(?:site|main|global|page)[^"']*["'][^>]*>.*?</header>"#).unwrap()
-    });
-    result = HEADER_RE.replace_all(&result, "").to_string();
-
-    // Remove divs with boilerplate class/id names
-    static BOILERPLATE_DIV_RE: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r#"(?si)<div[^>]*(?:class|id)\s*=\s*["'][^"']*(?:sidebar|widget|cookie|consent|banner|modal|popup|overlay|social[-_]?share|sharing|newsletter|subscribe|ad[-_]container|ad[-_]wrapper|advertisement|sponsor|promo)[^"']*["'][^>]*>.*?</div>"#).unwrap()
-    });
-    result = BOILERPLATE_DIV_RE.replace_all(&result, "").to_string();
-
-    result
+fn add_subtree(ids: &mut HashSet<ego_tree::NodeId>, el: &scraper::ElementRef) {
+    ids.insert(el.id());
+    for desc in el.descendants() {
+        ids.insert(desc.id());
+    }
 }

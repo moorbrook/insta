@@ -19,7 +19,7 @@ pub async fn extract(
         return Ok(None);
     }
 
-    let html = response.text().await?;
+    let html = super::read_body(response).await?;
     if html.is_empty() {
         return Ok(None);
     }

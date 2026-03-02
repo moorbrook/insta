@@ -1,11 +1,14 @@
 //! Extract article content from JSON-LD structured data (schema.org).
 
 use serde_json::Value;
+use std::sync::LazyLock;
+
+static JSONLD_SEL: LazyLock<scraper::Selector> =
+    LazyLock::new(|| scraper::Selector::parse("script[type='application/ld+json']").unwrap());
 
 /// Try to extract articleBody from JSON-LD script tags.
-pub fn extract_jsonld_body(html: &str) -> Option<String> {
-    let doc = scraper::Html::parse_document(html);
-    let selector = scraper::Selector::parse("script[type='application/ld+json']").unwrap();
+pub fn extract_jsonld_body(doc: &scraper::Html) -> Option<String> {
+    let selector = &*JSONLD_SEL;
 
     for script in doc.select(&selector) {
         let json_text = script.text().collect::<String>();

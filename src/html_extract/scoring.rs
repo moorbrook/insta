@@ -5,6 +5,7 @@
 
 use scraper::{Html, Selector};
 use std::collections::HashSet;
+use std::sync::LazyLock;
 
 pub struct ContentCandidate {
     pub title: String,
@@ -12,7 +13,7 @@ pub struct ContentCandidate {
 }
 
 /// CSS selectors for likely content containers, in priority order.
-const CONTENT_SELECTORS: &[&str] = &[
+const CONTENT_SELECTOR_STRS: &[&str] = &[
     // High confidence: specific article content containers
     "article",
     "[itemprop='articleBody']",
@@ -57,7 +58,7 @@ const CONTENT_SELECTORS: &[&str] = &[
 
 /// Selectors for elements that should be excluded from text extraction,
 /// even within content areas.
-const UNWANTED_WITHIN_CONTENT: &[&str] = &[
+const UNWANTED_WITHIN_CONTENT_STRS: &[&str] = &[
     "nav",
     "footer",
     "aside",
@@ -79,30 +80,52 @@ const UNWANTED_WITHIN_CONTENT: &[&str] = &[
     "figcaption",
 ];
 
-/// Extract main content from cleaned HTML.
-pub fn extract_main_content(html: &str) -> Option<ContentCandidate> {
-    let doc = Html::parse_document(html);
+// Pre-parsed selectors (parsed once, reused across all calls)
+static CONTENT_SELECTORS: LazyLock<Vec<Selector>> = LazyLock::new(|| {
+    CONTENT_SELECTOR_STRS
+        .iter()
+        .filter_map(|s| Selector::parse(s).ok())
+        .collect()
+});
 
-    // Build set of unwanted node IDs (pre-compute once)
-    let unwanted_ids = build_unwanted_ids(&doc);
+static UNWANTED_SELECTORS: LazyLock<Vec<Selector>> = LazyLock::new(|| {
+    UNWANTED_WITHIN_CONTENT_STRS
+        .iter()
+        .filter_map(|s| Selector::parse(s).ok())
+        .collect()
+});
 
-    // Try each content selector in priority order
+static BODY_SEL: LazyLock<Selector> = LazyLock::new(|| Selector::parse("body").unwrap());
+static P_SEL: LazyLock<Selector> = LazyLock::new(|| Selector::parse("p").unwrap());
+static HEADING_SEL: LazyLock<Selector> =
+    LazyLock::new(|| Selector::parse("h1, h2, h3").unwrap());
+static LI_SEL: LazyLock<Selector> = LazyLock::new(|| Selector::parse("li").unwrap());
+static A_SEL: LazyLock<Selector> = LazyLock::new(|| Selector::parse("a").unwrap());
+static H1_SEL: LazyLock<Selector> = LazyLock::new(|| Selector::parse("h1").unwrap());
+
+/// Extract main content from a parsed HTML document.
+///
+/// `boilerplate_ids` contains node IDs already identified as boilerplate
+/// by the cleaning pass (scripts, nav, footer, ads, etc.).
+pub fn extract_main_content(
+    doc: &Html,
+    boilerplate_ids: &HashSet<ego_tree::NodeId>,
+) -> Option<ContentCandidate> {
+    // Merge boilerplate exclusions with content-level unwanted elements
+    let mut exclude_ids = build_unwanted_ids(doc);
+    exclude_ids.extend(boilerplate_ids);
+
     let mut best: Option<(String, f64)> = None;
     let mut best_title = String::new();
 
-    for &selector_str in CONTENT_SELECTORS {
-        let selector = match Selector::parse(selector_str) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-
-        for element in doc.select(&selector) {
-            let text = extract_clean_text(&element, &unwanted_ids);
+    for selector in CONTENT_SELECTORS.iter() {
+        for element in doc.select(selector) {
+            let text = extract_clean_text(&element, &exclude_ids);
             if text.len() < 50 {
                 continue;
             }
 
-            let score = score_content(&element, &text);
+            let score = score_content(&element, &text, &exclude_ids);
 
             if let Some((ref best_text, best_score)) = best {
                 if score > best_score
@@ -120,11 +143,10 @@ pub fn extract_main_content(html: &str) -> Option<ContentCandidate> {
 
     // If no content selector matched, try extracting from <body> with scoring
     if best.is_none() {
-        let body_sel = Selector::parse("body").unwrap();
-        if let Some(body) = doc.select(&body_sel).next() {
-            let text = extract_clean_text(&body, &unwanted_ids);
+        if let Some(body) = doc.select(&BODY_SEL).next() {
+            let text = extract_clean_text(&body, &exclude_ids);
             if text.len() > 100 {
-                let score = score_content(&body, &text);
+                let score = score_content(&body, &text, &exclude_ids);
                 best = Some((text, score));
             }
         }
@@ -139,14 +161,11 @@ pub fn extract_main_content(html: &str) -> Option<ContentCandidate> {
 /// Build a set of node IDs that should be excluded from content.
 fn build_unwanted_ids(doc: &Html) -> HashSet<ego_tree::NodeId> {
     let mut ids = HashSet::new();
-    for selector_str in UNWANTED_WITHIN_CONTENT {
-        if let Ok(sel) = Selector::parse(selector_str) {
-            for el in doc.select(&sel) {
-                // Add this element and all its descendants
-                ids.insert(el.id());
-                for desc in el.descendants() {
-                    ids.insert(desc.id());
-                }
+    for sel in UNWANTED_SELECTORS.iter() {
+        for el in doc.select(sel) {
+            ids.insert(el.id());
+            for desc in el.descendants() {
+                ids.insert(desc.id());
             }
         }
     }
@@ -154,7 +173,10 @@ fn build_unwanted_ids(doc: &Html) -> HashSet<ego_tree::NodeId> {
 }
 
 /// Extract text from an element, excluding unwanted sub-elements.
-fn extract_clean_text(element: &scraper::ElementRef, exclude_ids: &HashSet<ego_tree::NodeId>) -> String {
+fn extract_clean_text(
+    element: &scraper::ElementRef,
+    exclude_ids: &HashSet<ego_tree::NodeId>,
+) -> String {
     let mut text_parts = Vec::new();
     collect_text_excluding(element, exclude_ids, &mut text_parts);
     let raw = text_parts.join(" ");
@@ -162,7 +184,8 @@ fn extract_clean_text(element: &scraper::ElementRef, exclude_ids: &HashSet<ego_t
 }
 
 /// Recursively collect text, skipping nodes in the exclusion set.
-fn collect_text_excluding(
+/// Public so mod.rs can use it for baseline extraction.
+pub(super) fn collect_text_excluding(
     element: &scraper::ElementRef,
     exclude_ids: &HashSet<ego_tree::NodeId>,
     parts: &mut Vec<String>,
@@ -202,7 +225,14 @@ fn collect_text_excluding(
 }
 
 /// Score a content candidate based on text quality heuristics.
-fn score_content(element: &scraper::ElementRef, text: &str) -> f64 {
+///
+/// Uses the same exclusion set for link density calculation so that
+/// scoring is consistent with the filtered text.
+fn score_content(
+    element: &scraper::ElementRef,
+    text: &str,
+    exclude_ids: &HashSet<ego_tree::NodeId>,
+) -> f64 {
     let text_len = text.len() as f64;
     if text_len == 0.0 {
         return 0.0;
@@ -211,8 +241,8 @@ fn score_content(element: &scraper::ElementRef, text: &str) -> f64 {
     // Base score: text length (more text = likely more content)
     let mut score = text_len.ln();
 
-    // Link density penalty
-    let link_density = calculate_link_density(element);
+    // Link density penalty (uses filtered text for consistency)
+    let link_density = calculate_link_density(element, text_len, exclude_ids);
     if link_density > 0.5 {
         score *= 0.1;
     } else if link_density > 0.3 {
@@ -222,22 +252,19 @@ fn score_content(element: &scraper::ElementRef, text: &str) -> f64 {
     }
 
     // Paragraph density bonus
-    let p_sel = Selector::parse("p").unwrap();
-    let p_count = element.select(&p_sel).count() as f64;
+    let p_count = element.select(&P_SEL).count() as f64;
     if p_count > 3.0 {
         score *= 1.0 + (p_count.ln() * 0.2);
     }
 
     // Heading bonus
-    let heading_sel = Selector::parse("h1, h2, h3").unwrap();
-    let heading_count = element.select(&heading_sel).count();
+    let heading_count = element.select(&HEADING_SEL).count();
     if heading_count > 0 && heading_count < 10 {
         score *= 1.1;
     }
 
     // Penalty for too many list items (likely navigation)
-    let li_sel = Selector::parse("li").unwrap();
-    let li_count = element.select(&li_sel).count() as f64;
+    let li_count = element.select(&LI_SEL).count() as f64;
     if li_count > 0.0 && p_count > 0.0 && li_count / p_count > 5.0 {
         score *= 0.5;
     }
@@ -256,27 +283,33 @@ fn score_content(element: &scraper::ElementRef, text: &str) -> f64 {
     score
 }
 
-/// Calculate ratio of link text to total text within an element.
-fn calculate_link_density(element: &scraper::ElementRef) -> f64 {
-    let total_text: String = element.text().collect();
-    let total_len = total_text.trim().len() as f64;
-    if total_len == 0.0 {
+/// Calculate ratio of link text to total text within an element,
+/// using the exclusion set so density matches the filtered content.
+fn calculate_link_density(
+    element: &scraper::ElementRef,
+    total_text_len: f64,
+    exclude_ids: &HashSet<ego_tree::NodeId>,
+) -> f64 {
+    if total_text_len == 0.0 {
         return 1.0;
     }
 
-    let a_sel = Selector::parse("a").unwrap();
-    let link_text_len: usize = element
-        .select(&a_sel)
-        .map(|a| a.text().collect::<String>().trim().len())
-        .sum();
+    let mut link_text_len = 0usize;
+    for a in element.select(&A_SEL) {
+        if exclude_ids.contains(&a.id()) {
+            continue;
+        }
+        let mut parts = Vec::new();
+        collect_text_excluding(&a, exclude_ids, &mut parts);
+        link_text_len += parts.iter().map(|s| s.len()).sum::<usize>();
+    }
 
-    link_text_len as f64 / total_len
+    link_text_len as f64 / total_text_len
 }
 
 /// Try to extract a title from within the content element.
 fn extract_content_title(element: &scraper::ElementRef) -> String {
-    let h1_sel = Selector::parse("h1").unwrap();
-    if let Some(h1) = element.select(&h1_sel).next() {
+    if let Some(h1) = element.select(&H1_SEL).next() {
         let title = h1.text().collect::<String>().trim().to_string();
         if !title.is_empty() {
             return title;

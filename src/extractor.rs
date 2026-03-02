@@ -82,16 +82,26 @@ impl Extractor {
                     let is_archived = article.content.contains("Internet Archive Wayback Machine")
                         || article.content.contains("Archive.ph");
 
-                    if let Err(e) = self.db.mark_success(
-                        &row.url,
-                        final_title,
-                        &filename,
-                        &article.content,
-                        word_count,
-                        is_archived,
-                    ) {
-                        last_error = format!("DB error: {e}");
-                        continue;
+                    // Retry DB update separately — file is already saved to disk
+                    let mut db_ok = false;
+                    for _db_attempt in 0..3 {
+                        if self.db.mark_success(
+                            &row.url,
+                            final_title,
+                            &filename,
+                            &article.content,
+                            word_count,
+                            is_archived,
+                        ).is_ok() {
+                            db_ok = true;
+                            break;
+                        }
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                    }
+                    if !db_ok {
+                        last_error = format!("DB error after successful download of {}", row.url);
+                        // Don't retry extraction — content is already on disk
+                        break;
                     }
 
                     return ExtractionResult::Success { filename };
@@ -115,7 +125,9 @@ impl Extractor {
             }
         }
 
-        let _ = self.db.mark_failed(&row.url, &last_error);
+        if let Err(e) = self.db.mark_failed(&row.url, &last_error) {
+            eprintln!("Warning: failed to update DB for {}: {e}", row.url);
+        }
         ExtractionResult::Failed { error: last_error }
     }
 

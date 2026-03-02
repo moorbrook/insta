@@ -69,7 +69,7 @@ async fn extract_blob(
         return Ok(None);
     }
 
-    let content = response.text().await?;
+    let content = super::read_body(response).await?;
     if content.is_empty() {
         return Ok(None);
     }

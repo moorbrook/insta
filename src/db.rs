@@ -1,7 +1,7 @@
 use anyhow::Context;
 use rusqlite::{params, Connection};
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 use crate::csv_reader::ArticleRow;
 
@@ -45,8 +45,15 @@ impl Database {
         })
     }
 
+    /// Acquire the database connection lock, converting poison errors to anyhow.
+    fn lock_conn(&self) -> anyhow::Result<MutexGuard<'_, Connection>> {
+        self.conn
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Database lock poisoned: {e}"))
+    }
+
     pub fn init_schema(&self) -> anyhow::Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS articles (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -104,7 +111,7 @@ impl Database {
 
     /// Check that required tables exist, bail with a friendly message if not.
     pub fn ensure_schema(&self) -> anyhow::Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let has_table: bool = conn
             .prepare("SELECT 1 FROM articles LIMIT 0")
             .is_ok();
@@ -117,23 +124,29 @@ impl Database {
     }
 
     pub fn is_already_successful(&self, url: &str) -> anyhow::Result<bool> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare_cached("SELECT 1 FROM articles WHERE url = ? AND status = 'success'")?;
         Ok(stmt.exists(params![url])?)
     }
 
     pub fn is_already_failed(&self, url: &str) -> anyhow::Result<bool> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare_cached("SELECT 1 FROM articles WHERE url = ? AND status = 'failed'")?;
         Ok(stmt.exists(params![url])?)
     }
 
     pub fn insert_pending(&self, row: &ArticleRow) -> anyhow::Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let timestamp: Option<i64> = row.timestamp.parse().ok();
         conn.execute(
-            "INSERT OR REPLACE INTO articles (url, title, folder, timestamp, tags, status)
-             VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
+            "INSERT INTO articles (url, title, folder, timestamp, tags, status)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'pending')
+             ON CONFLICT(url) DO UPDATE SET
+                title = excluded.title,
+                folder = excluded.folder,
+                timestamp = excluded.timestamp,
+                tags = excluded.tags,
+                status = 'pending'",
             params![row.url, row.title, row.folder, timestamp, row.tags],
         )?;
         Ok(())
@@ -148,7 +161,7 @@ impl Database {
         word_count: i64,
         is_archived: bool,
     ) -> anyhow::Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let status = if is_archived { "archived" } else { "success" };
         // UPDATE triggers handle FTS sync automatically
         conn.execute(
@@ -160,7 +173,7 @@ impl Database {
     }
 
     pub fn mark_failed(&self, url: &str, error: &str) -> anyhow::Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         conn.execute(
             "UPDATE articles SET status = 'failed', error_message = ?1 WHERE url = ?2",
             params![error, url],
@@ -169,7 +182,7 @@ impl Database {
     }
 
     pub fn get_status_counts(&self) -> anyhow::Result<StatusCounts> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let total: i64 = conn.query_row("SELECT COUNT(*) FROM articles", [], |r| r.get(0))?;
         let success: i64 = conn.query_row(
             "SELECT COUNT(*) FROM articles WHERE status IN ('success', 'archived')",
@@ -211,7 +224,7 @@ impl Database {
         query: &str,
         limit: usize,
     ) -> anyhow::Result<Vec<SearchResult>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT a.id, a.title, a.url, a.folder, a.word_count,
                     snippet(articles_fts, 1, '>>>','<<<', '...', 30) as snip
@@ -239,7 +252,7 @@ impl Database {
     }
 
     pub fn read_by_id(&self, id: i64) -> anyhow::Result<Option<Article>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare_cached(
             "SELECT id, title, url, folder, word_count, content FROM articles WHERE id = ?1",
         )?;
@@ -259,7 +272,7 @@ impl Database {
     }
 
     pub fn get_failed_urls(&self, limit: usize) -> anyhow::Result<Vec<(String, Option<String>)>> {
-        let conn = self.conn.lock().unwrap();
+        let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT url, error_message FROM articles WHERE status = 'failed' LIMIT ?1",
         )?;
