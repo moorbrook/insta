@@ -40,7 +40,7 @@ impl Database {
                 filename TEXT,
                 status TEXT DEFAULT 'pending',
                 error_message TEXT,
-                content_preview TEXT,
+                content TEXT,
                 word_count INTEGER,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
@@ -48,9 +48,39 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_status ON articles(status);
             CREATE INDEX IF NOT EXISTS idx_folder ON articles(folder);
             CREATE VIRTUAL TABLE IF NOT EXISTS articles_fts USING fts5(
-                title, content_preview, content='articles', content_rowid='id'
-            );",
+                title, content, content='articles', content_rowid='id',
+                tokenize='porter unicode61'
+            );
+
+            -- Triggers to keep FTS in sync
+            CREATE TRIGGER IF NOT EXISTS articles_ai AFTER INSERT ON articles BEGIN
+                INSERT INTO articles_fts(rowid, title, content)
+                VALUES (new.id, new.title, new.content);
+            END;
+            CREATE TRIGGER IF NOT EXISTS articles_ad AFTER DELETE ON articles BEGIN
+                INSERT INTO articles_fts(articles_fts, rowid, title, content)
+                VALUES ('delete', old.id, old.title, old.content);
+            END;
+            CREATE TRIGGER IF NOT EXISTS articles_au AFTER UPDATE ON articles BEGIN
+                INSERT INTO articles_fts(articles_fts, rowid, title, content)
+                VALUES ('delete', old.id, old.title, old.content);
+                INSERT INTO articles_fts(rowid, title, content)
+                VALUES (new.id, new.title, new.content);
+            END;",
         )?;
+
+        // Migrate: if old schema had content_preview but no content column, add it
+        let has_content: bool = conn
+            .prepare("SELECT content FROM articles LIMIT 0")
+            .is_ok();
+        if !has_content {
+            conn.execute_batch(
+                "ALTER TABLE articles ADD COLUMN content TEXT;
+                 -- Move preview data into content for existing rows
+                 UPDATE articles SET content = content_preview WHERE content IS NULL AND content_preview IS NOT NULL;",
+            )?;
+        }
+
         Ok(())
     }
 
@@ -82,22 +112,17 @@ impl Database {
         url: &str,
         title: &str,
         filename: &str,
-        preview: &str,
+        content: &str,
         word_count: i64,
         is_archived: bool,
     ) -> anyhow::Result<()> {
         let conn = self.conn.lock().unwrap();
         let status = if is_archived { "archived" } else { "success" };
+        // UPDATE triggers handle FTS sync automatically
         conn.execute(
             "UPDATE articles SET status = ?1, title = ?2, filename = ?3,
-             content_preview = ?4, word_count = ?5 WHERE url = ?6",
-            params![status, title, filename, preview, word_count, url],
-        )?;
-        // Update FTS index
-        conn.execute(
-            "INSERT INTO articles_fts(rowid, title, content_preview)
-             SELECT id, title, content_preview FROM articles WHERE url = ?1",
-            params![url],
+             content = ?4, word_count = ?5 WHERE url = ?6",
+            params![status, title, filename, content, word_count, url],
         )?;
         Ok(())
     }

@@ -78,12 +78,6 @@ impl Extractor {
                     }
 
                     let word_count = article.content.split_whitespace().count() as i64;
-                    let preview: String = article
-                        .content
-                        .chars()
-                        .take(500)
-                        .collect::<String>()
-                        .replace('\n', " ");
 
                     let is_archived = article.content.contains("Internet Archive Wayback Machine")
                         || article.content.contains("Archive.ph");
@@ -92,7 +86,7 @@ impl Extractor {
                         &row.url,
                         final_title,
                         &filename,
-                        &preview,
+                        &article.content,
                         word_count,
                         is_archived,
                     ) {
