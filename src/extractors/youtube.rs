@@ -1,14 +1,26 @@
 use super::ExtractedArticle;
 use regex::Regex;
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::process::Command;
+
+static YT_DLP_WARNED: AtomicBool = AtomicBool::new(false);
 
 pub fn is_youtube(url: &str) -> bool {
     url.contains("youtube.com") || url.contains("youtu.be")
 }
 
 pub async fn extract(url: &str, timeout: Duration) -> anyhow::Result<Option<ExtractedArticle>> {
+    // Check if yt-dlp is available
+    if Command::new("yt-dlp").arg("--version").output().await.is_err() {
+        if !YT_DLP_WARNED.swap(true, Ordering::Relaxed) {
+            eprintln!("Warning: yt-dlp is not installed. YouTube transcripts will be skipped.");
+            eprintln!("  Install: pip install yt-dlp  (or: brew install yt-dlp)");
+        }
+        return Ok(None);
+    }
+
     let tmpdir = tempfile::tempdir()?;
     let output_template = tmpdir.path().join("transcript");
 

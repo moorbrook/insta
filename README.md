@@ -14,12 +14,12 @@ cargo install --git https://github.com/moorbrook/insta
 
 Optional: install [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) for YouTube transcript extraction:
 ```bash
-uv tool install yt-dlp
+pip install yt-dlp        # or: brew install yt-dlp
 ```
 
 ## Quick Start
 
-1. Export your bookmarks from [Instapaper Settings](https://www.instapaper.com/user) as CSV
+1. Export your bookmarks from [Instapaper Settings](https://www.instapaper.com/user) as CSV (the export contains columns: `URL`, `Title`, `Selection`, `Folder`, `Timestamp`, `Tags`)
 
 2. Download all articles:
 ```bash
@@ -46,12 +46,12 @@ Download articles from an Instapaper CSV export.
 insta download export.csv                  # defaults: 20 workers, 3 retries, 30s timeout
 insta download export.csv -j 10 -r 5       # 10 workers, 5 retries
 insta download export.csv --retry-failed    # re-attempt previously failed articles
-insta download export.csv -o ~/archive      # custom output directory
+insta download export.csv -d ~/archive      # custom output directory
 ```
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-o, --output-dir` | `articles` | Output directory for articles and database |
+| `-d, --dir` | `articles` | Output directory for articles and database |
 | `-j, --workers` | `20` | Concurrent download workers |
 | `-r, --retries` | `3` | Max retries per article |
 | `-t, --timeout` | `30` | HTTP timeout in seconds |
@@ -59,9 +59,9 @@ insta download export.csv -o ~/archive      # custom output directory
 
 Automatically skips articles already marked as successful. Safe to run multiple times with updated exports.
 
-If you use a custom output directory (`-o`), pass the same path to other commands with `-d`:
+If you use a custom directory, pass `-d` to all commands:
 ```bash
-insta download export.csv -o ~/archive
+insta download export.csv -d ~/archive
 insta search "query" -d ~/archive
 insta stats -d ~/archive
 ```

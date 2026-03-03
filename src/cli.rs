@@ -15,8 +15,8 @@ pub enum Command {
         /// Path to Instapaper CSV export file
         csv_file: PathBuf,
 
-        /// Output directory for downloaded articles
-        #[arg(short, long, default_value = "articles")]
+        /// Output directory for downloaded articles and database
+        #[arg(short = 'd', long = "dir", alias = "output-dir", alias = "db-dir", default_value = "articles")]
         output_dir: PathBuf,
 
         /// Maximum concurrent downloads
@@ -43,7 +43,7 @@ pub enum Command {
         query: Vec<String>,
 
         /// Path to articles directory containing index.db
-        #[arg(short, long, default_value = "articles")]
+        #[arg(short = 'd', long = "dir", alias = "db-dir", default_value = "articles")]
         db_dir: PathBuf,
 
         /// Maximum number of results
@@ -57,14 +57,14 @@ pub enum Command {
         id: i64,
 
         /// Path to articles directory containing index.db
-        #[arg(short, long, default_value = "articles")]
+        #[arg(short = 'd', long = "dir", alias = "db-dir", default_value = "articles")]
         db_dir: PathBuf,
     },
 
     /// Show statistics about the article database
     Stats {
         /// Path to articles directory containing index.db
-        #[arg(short, long, default_value = "articles")]
+        #[arg(short = 'd', long = "dir", alias = "db-dir", default_value = "articles")]
         db_dir: PathBuf,
     },
 }

@@ -149,6 +149,12 @@ async fn cmd_download(
     let elapsed = start.elapsed().as_secs_f64();
     print_report(&db, elapsed)?;
 
+    let s = success_count.load(Ordering::Relaxed);
+    let f = failed_count.load(Ordering::Relaxed);
+    if s == 0 && f > 0 {
+        anyhow::bail!("All {f} article(s) failed to download. Run with --retry-failed to try again.");
+    }
+
     Ok(())
 }
 
@@ -172,7 +178,11 @@ fn cmd_search(
 ) -> anyhow::Result<()> {
     let db = open_db(db_dir)?;
 
-    let results = db.search(query, limit)?;
+    let results = db.search(query, limit).map_err(|e| {
+        anyhow::anyhow!(
+            "Search failed: {e}\n  Tip: check for unmatched quotes. Use FTS5 syntax: \"exact phrase\", word1 OR word2, NOT word3"
+        )
+    })?;
 
     if results.is_empty() {
         println!("No results for: {query}");
@@ -199,10 +209,13 @@ fn cmd_search(
             println!("    [{}]", meta.join(" | "));
         }
 
-        let snippet = r
-            .snippet
-            .replace(">>>", "\x1b[1;33m")
-            .replace("<<<", "\x1b[0m");
+        let snippet = if std::io::IsTerminal::is_terminal(&std::io::stdout()) {
+            r.snippet
+                .replace(">>>", "\x1b[1;33m")
+                .replace("<<<", "\x1b[0m")
+        } else {
+            r.snippet.replace(">>>", "").replace("<<<", "")
+        };
         println!("    {snippet}");
         println!();
     }
