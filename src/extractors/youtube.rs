@@ -16,7 +16,7 @@ pub async fn extract(url: &str, timeout: Duration) -> anyhow::Result<Option<Extr
     if Command::new("yt-dlp").arg("--version").output().await.is_err() {
         if !YT_DLP_WARNED.swap(true, Ordering::Relaxed) {
             eprintln!("Warning: yt-dlp is not installed. YouTube transcripts will be skipped.");
-            eprintln!("  Install: pip install yt-dlp  (or: brew install yt-dlp)");
+            eprintln!("  Install: uv tool install yt-dlp  (https://docs.astral.sh/uv)");
         }
         return Ok(None);
     }

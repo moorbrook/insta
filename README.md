@@ -12,9 +12,10 @@ Requires a [Rust toolchain](https://rustup.rs/). Then:
 cargo install --git https://github.com/moorbrook/insta
 ```
 
-Optional: install [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) for YouTube transcript extraction:
+Optional: install [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) for YouTube transcript extraction.
+Requires [`uv`](https://docs.astral.sh/uv/getting-started/installation/), then:
 ```bash
-pip install yt-dlp        # or: brew install yt-dlp
+uv tool install yt-dlp
 ```
 
 ## Quick Start
