@@ -13,7 +13,12 @@ pub fn is_youtube(url: &str) -> bool {
 
 pub async fn extract(url: &str, timeout: Duration) -> anyhow::Result<Option<ExtractedArticle>> {
     // Check if yt-dlp is available
-    if Command::new("yt-dlp").arg("--version").output().await.is_err() {
+    if Command::new("yt-dlp")
+        .arg("--version")
+        .output()
+        .await
+        .is_err()
+    {
         if !YT_DLP_WARNED.swap(true, Ordering::Relaxed) {
             eprintln!("Warning: yt-dlp is not installed. YouTube transcripts will be skipped.");
             eprintln!("  Install: uv tool install yt-dlp  (https://docs.astral.sh/uv)");
@@ -82,9 +87,7 @@ pub async fn extract(url: &str, timeout: Duration) -> anyhow::Result<Option<Extr
         .await;
 
     let title = match title_output {
-        Ok(o) if o.status.success() => {
-            String::from_utf8_lossy(&o.stdout).trim().to_string()
-        }
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
         _ => "YouTube Video".to_string(),
     };
 

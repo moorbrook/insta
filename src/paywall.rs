@@ -96,8 +96,7 @@ fn extract_domain(url_str: &str) -> Option<String> {
 }
 
 pub fn is_paywalled(url_str: &str) -> bool {
-    extract_domain(url_str)
-        .is_some_and(|d| PAYWALLED_DOMAINS.contains(&d.as_str()))
+    extract_domain(url_str).is_some_and(|d| PAYWALLED_DOMAINS.contains(&d.as_str()))
 }
 
 pub fn get_paywalled_domain(url_str: &str) -> Option<String> {

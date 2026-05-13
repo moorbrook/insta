@@ -10,10 +10,9 @@ use std::sync::LazyLock;
 
 /// Tags that are always non-content (scripts, forms, media, etc.)
 const REMOVE_TAGS: &[&str] = &[
-    "script", "style", "noscript", "iframe", "object", "embed", "applet",
-    "svg", "canvas", "map", "audio", "video", "source", "track",
-    "input", "button", "select", "option", "textarea", "fieldset",
-    "form", "label", "datalist", "output",
+    "script", "style", "noscript", "iframe", "object", "embed", "applet", "svg", "canvas", "map",
+    "audio", "video", "source", "track", "input", "button", "select", "option", "textarea",
+    "fieldset", "form", "label", "datalist", "output",
 ];
 
 /// CSS selectors for structural boilerplate elements.

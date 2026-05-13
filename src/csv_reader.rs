@@ -2,6 +2,7 @@ use serde::Deserialize;
 use std::path::Path;
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)] // fields populated by serde from CSV headers
 pub struct ArticleRow {
     #[serde(rename = "URL")]
     pub url: String,
