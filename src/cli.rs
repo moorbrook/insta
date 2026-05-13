@@ -2,7 +2,11 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
-#[command(name = "insta", version, about = "Instapaper article downloader and search engine")]
+#[command(
+    name = "insta",
+    version,
+    about = "Instapaper article downloader and search engine"
+)]
 pub struct Args {
     #[command(subcommand)]
     pub command: Command,
@@ -16,7 +20,13 @@ pub enum Command {
         csv_file: PathBuf,
 
         /// Output directory for downloaded articles and database
-        #[arg(short = 'd', long = "dir", alias = "output-dir", alias = "db-dir", default_value = "articles")]
+        #[arg(
+            short = 'd',
+            long = "dir",
+            alias = "output-dir",
+            alias = "db-dir",
+            default_value = "articles"
+        )]
         output_dir: PathBuf,
 
         /// Maximum concurrent downloads
@@ -43,7 +53,12 @@ pub enum Command {
         query: Vec<String>,
 
         /// Path to articles directory containing index.db
-        #[arg(short = 'd', long = "dir", alias = "db-dir", default_value = "articles")]
+        #[arg(
+            short = 'd',
+            long = "dir",
+            alias = "db-dir",
+            default_value = "articles"
+        )]
         db_dir: PathBuf,
 
         /// Maximum number of results
@@ -57,14 +72,24 @@ pub enum Command {
         id: i64,
 
         /// Path to articles directory containing index.db
-        #[arg(short = 'd', long = "dir", alias = "db-dir", default_value = "articles")]
+        #[arg(
+            short = 'd',
+            long = "dir",
+            alias = "db-dir",
+            default_value = "articles"
+        )]
         db_dir: PathBuf,
     },
 
     /// Show statistics about the article database
     Stats {
         /// Path to articles directory containing index.db
-        #[arg(short = 'd', long = "dir", alias = "db-dir", default_value = "articles")]
+        #[arg(
+            short = 'd',
+            long = "dir",
+            alias = "db-dir",
+            default_value = "articles"
+        )]
         db_dir: PathBuf,
     },
 }

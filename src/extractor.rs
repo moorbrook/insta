@@ -14,6 +14,7 @@ fn is_scraper_hostile(url: &str) -> bool {
     url.contains("medium.com") || url.contains("towardsdatascience.com")
 }
 
+#[allow(dead_code)] // payload fields surface in Debug output + status writes
 pub enum ExtractionResult {
     Success { filename: String },
     Failed { error: String },
@@ -85,14 +86,18 @@ impl Extractor {
                     // Retry DB update separately — file is already saved to disk
                     let mut db_ok = false;
                     for _db_attempt in 0..3 {
-                        if self.db.mark_success(
-                            &row.url,
-                            final_title,
-                            &filename,
-                            &article.content,
-                            word_count,
-                            is_archived,
-                        ).is_ok() {
+                        if self
+                            .db
+                            .mark_success(
+                                &row.url,
+                                final_title,
+                                &filename,
+                                &article.content,
+                                word_count,
+                                is_archived,
+                            )
+                            .is_ok()
+                        {
                             db_ok = true;
                             break;
                         }
@@ -159,9 +164,7 @@ impl Extractor {
 
         // 4. Paywalled sites -> try Instapaper API (requires OAuth setup via `insta login`)
         if is_paywalled(url) {
-            if let Some(article) =
-                instapaper::extract(&self.client, url, self.timeout).await?
-            {
+            if let Some(article) = instapaper::extract(&self.client, url, self.timeout).await? {
                 return Ok(Some(article));
             }
         }

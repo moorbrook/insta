@@ -18,16 +18,16 @@ concurrency:
 
 jobs:
   fmt:
-    uses: moorbrook/ci-workflows/.github/workflows/rust-fmt.yml@1115d5cfc8c599ac713b67fcde93cc123cb7d330
+    uses: moorbrook/ci-workflows/.github/workflows/rust-fmt.yml@5a86afac0c5b3cffb844449302f25268a14f6693
 
   lint:
-    uses: moorbrook/ci-workflows/.github/workflows/rust-lint.yml@1115d5cfc8c599ac713b67fcde93cc123cb7d330
+    uses: moorbrook/ci-workflows/.github/workflows/rust-lint.yml@5a86afac0c5b3cffb844449302f25268a14f6693
 
   test:
-    uses: moorbrook/ci-workflows/.github/workflows/rust-test.yml@1115d5cfc8c599ac713b67fcde93cc123cb7d330
+    uses: moorbrook/ci-workflows/.github/workflows/rust-test.yml@5a86afac0c5b3cffb844449302f25268a14f6693
 
   # Heavy: only on main-push. Builds the Windows-msvc target via cargo-xwin
   # so we don't burn 2x Windows-runner quota on every PR.
   windows-cross:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    uses: moorbrook/ci-workflows/.github/workflows/rust-windows-cross.yml@1115d5cfc8c599ac713b67fcde93cc123cb7d330
+    uses: moorbrook/ci-workflows/.github/workflows/rust-windows-cross.yml@5a86afac0c5b3cffb844449302f25268a14f6693

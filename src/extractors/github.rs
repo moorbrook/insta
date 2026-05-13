@@ -5,8 +5,9 @@ use serde::Deserialize;
 use std::sync::LazyLock;
 use std::time::Duration;
 
-static GITHUB_REPO_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"https?://(?:www\.)?github\.com/([^/]+)/([^/?#]+)/?(?:[?#].*)?$").unwrap());
+static GITHUB_REPO_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"https?://(?:www\.)?github\.com/([^/]+)/([^/?#]+)/?(?:[?#].*)?$").unwrap()
+});
 
 static GITHUB_BLOB_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"https?://(?:www\.)?github\.com/([^/]+)/([^/]+)/blob/([^/]+)/(.+)").unwrap()

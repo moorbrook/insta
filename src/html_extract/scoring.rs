@@ -97,8 +97,7 @@ static UNWANTED_SELECTORS: LazyLock<Vec<Selector>> = LazyLock::new(|| {
 
 static BODY_SEL: LazyLock<Selector> = LazyLock::new(|| Selector::parse("body").unwrap());
 static P_SEL: LazyLock<Selector> = LazyLock::new(|| Selector::parse("p").unwrap());
-static HEADING_SEL: LazyLock<Selector> =
-    LazyLock::new(|| Selector::parse("h1, h2, h3").unwrap());
+static HEADING_SEL: LazyLock<Selector> = LazyLock::new(|| Selector::parse("h1, h2, h3").unwrap());
 static LI_SEL: LazyLock<Selector> = LazyLock::new(|| Selector::parse("li").unwrap());
 static A_SEL: LazyLock<Selector> = LazyLock::new(|| Selector::parse("a").unwrap());
 static H1_SEL: LazyLock<Selector> = LazyLock::new(|| Selector::parse("h1").unwrap());
@@ -207,8 +206,20 @@ pub(super) fn collect_text_excluding(
                     let tag = el.name();
                     let is_block = matches!(
                         tag,
-                        "p" | "div" | "br" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
-                            | "blockquote" | "pre" | "li" | "tr" | "section" | "article"
+                        "p" | "div"
+                            | "br"
+                            | "h1"
+                            | "h2"
+                            | "h3"
+                            | "h4"
+                            | "h5"
+                            | "h6"
+                            | "blockquote"
+                            | "pre"
+                            | "li"
+                            | "tr"
+                            | "section"
+                            | "article"
                     );
                     if is_block && !parts.is_empty() {
                         parts.push("\n".to_string());

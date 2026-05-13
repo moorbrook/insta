@@ -4,8 +4,8 @@ mod db;
 mod extractor;
 mod extractors;
 mod filename;
-mod paywall;
 mod html_extract;
+mod paywall;
 
 use clap::Parser;
 use cli::Command;
@@ -29,7 +29,15 @@ async fn main() -> anyhow::Result<()> {
             timeout,
             retry_failed,
         } => {
-            cmd_download(csv_file, output_dir, workers, retries, timeout, retry_failed).await
+            cmd_download(
+                csv_file,
+                output_dir,
+                workers,
+                retries,
+                timeout,
+                retry_failed,
+            )
+            .await
         }
         Command::Search {
             query,
@@ -152,7 +160,9 @@ async fn cmd_download(
     let s = success_count.load(Ordering::Relaxed);
     let f = failed_count.load(Ordering::Relaxed);
     if s == 0 && f > 0 {
-        anyhow::bail!("All {f} article(s) failed to download. Run with --retry-failed to try again.");
+        anyhow::bail!(
+            "All {f} article(s) failed to download. Run with --retry-failed to try again."
+        );
     }
 
     Ok(())
@@ -171,11 +181,7 @@ fn open_db(db_dir: &std::path::Path) -> anyhow::Result<db::Database> {
     Ok(db)
 }
 
-fn cmd_search(
-    query: &str,
-    db_dir: &std::path::Path,
-    limit: usize,
-) -> anyhow::Result<()> {
+fn cmd_search(query: &str, db_dir: &std::path::Path, limit: usize) -> anyhow::Result<()> {
     let db = open_db(db_dir)?;
 
     let results = db.search(query, limit).map_err(|e| {
