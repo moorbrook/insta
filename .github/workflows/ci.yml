@@ -1,0 +1,33 @@
+name: CI
+
+# Caller for moorbrook/ci-workflows reusable workflows.
+# Pinned to a specific SHA; bump to roll the upgrade.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  fmt:
+    uses: moorbrook/ci-workflows/.github/workflows/rust-fmt.yml@1115d5cfc8c599ac713b67fcde93cc123cb7d330
+
+  lint:
+    uses: moorbrook/ci-workflows/.github/workflows/rust-lint.yml@1115d5cfc8c599ac713b67fcde93cc123cb7d330
+
+  test:
+    uses: moorbrook/ci-workflows/.github/workflows/rust-test.yml@1115d5cfc8c599ac713b67fcde93cc123cb7d330
+
+  # Heavy: only on main-push. Builds the Windows-msvc target via cargo-xwin
+  # so we don't burn 2x Windows-runner quota on every PR.
+  windows-cross:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: moorbrook/ci-workflows/.github/workflows/rust-windows-cross.yml@1115d5cfc8c599ac713b67fcde93cc123cb7d330
