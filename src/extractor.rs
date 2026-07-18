@@ -10,7 +10,8 @@ use crate::paywall::{get_paywalled_domain, is_paywalled};
 
 /// Domains known to block scrapers - try archive.ph first
 fn is_scraper_hostile(url: &str) -> bool {
-    url.contains("medium.com") || url.contains("towardsdatascience.com")
+    crate::extractors::host_is_domain_or_subdomain(url, "medium.com")
+        || crate::extractors::host_is_domain_or_subdomain(url, "towardsdatascience.com")
 }
 
 pub enum ExtractionResult {
@@ -66,7 +67,8 @@ impl Extractor {
                         continue;
                     }
 
-                    let word_count = article.content.split_whitespace().count() as i64;
+                    let word_count = i64::try_from(article.content.split_whitespace().count())
+                        .expect("word count fits in i64 for an in-memory article");
 
                     let is_archived = article.content.contains("Internet Archive Wayback Machine")
                         || article.content.contains("Archive.ph");
@@ -170,5 +172,22 @@ impl Extractor {
         }
 
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_scraper_hostile;
+
+    #[test]
+    fn scraper_hostile_routing_uses_the_destination_host() {
+        assert!(is_scraper_hostile("https://medium.com/example/story"));
+        assert!(is_scraper_hostile(
+            "https://blog.towardsdatascience.com/example"
+        ));
+        assert!(!is_scraper_hostile(
+            "https://example.com/?next=https://medium.com/story"
+        ));
+        assert!(!is_scraper_hostile("https://medium.com.evil.example/story"));
     }
 }

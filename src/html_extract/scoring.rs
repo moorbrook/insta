@@ -97,8 +97,7 @@ static UNWANTED_SELECTORS: LazyLock<Vec<Selector>> = LazyLock::new(|| {
 
 static BODY_SEL: LazyLock<Selector> = LazyLock::new(|| Selector::parse("body").unwrap());
 static P_SEL: LazyLock<Selector> = LazyLock::new(|| Selector::parse("p").unwrap());
-static HEADING_SEL: LazyLock<Selector> =
-    LazyLock::new(|| Selector::parse("h1, h2, h3").unwrap());
+static HEADING_SEL: LazyLock<Selector> = LazyLock::new(|| Selector::parse("h1, h2, h3").unwrap());
 static LI_SEL: LazyLock<Selector> = LazyLock::new(|| Selector::parse("li").unwrap());
 static A_SEL: LazyLock<Selector> = LazyLock::new(|| Selector::parse("a").unwrap());
 static H1_SEL: LazyLock<Selector> = LazyLock::new(|| Selector::parse("h1").unwrap());
@@ -207,8 +206,20 @@ pub(super) fn collect_text_excluding(
                     let tag = el.name();
                     let is_block = matches!(
                         tag,
-                        "p" | "div" | "br" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
-                            | "blockquote" | "pre" | "li" | "tr" | "section" | "article"
+                        "p" | "div"
+                            | "br"
+                            | "h1"
+                            | "h2"
+                            | "h3"
+                            | "h4"
+                            | "h5"
+                            | "h6"
+                            | "blockquote"
+                            | "pre"
+                            | "li"
+                            | "tr"
+                            | "section"
+                            | "article"
                     );
                     if is_block && !parts.is_empty() {
                         parts.push("\n".to_string());
@@ -228,12 +239,20 @@ pub(super) fn collect_text_excluding(
 ///
 /// Uses the same exclusion set for link density calculation so that
 /// scoring is consistent with the filtered text.
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "DOM text and node counts are bounded by addressable memory and only rank heuristics"
+)]
+fn usize_as_f64(value: usize) -> f64 {
+    value as f64
+}
+
 fn score_content(
     element: &scraper::ElementRef,
     text: &str,
     exclude_ids: &HashSet<ego_tree::NodeId>,
 ) -> f64 {
-    let text_len = text.len() as f64;
+    let text_len = usize_as_f64(text.len());
     if text_len == 0.0 {
         return 0.0;
     }
@@ -252,7 +271,7 @@ fn score_content(
     }
 
     // Paragraph density bonus
-    let p_count = element.select(&P_SEL).count() as f64;
+    let p_count = usize_as_f64(element.select(&P_SEL).count());
     if p_count > 3.0 {
         score *= 1.0 + (p_count.ln() * 0.2);
     }
@@ -264,13 +283,13 @@ fn score_content(
     }
 
     // Penalty for too many list items (likely navigation)
-    let li_count = element.select(&LI_SEL).count() as f64;
+    let li_count = usize_as_f64(element.select(&LI_SEL).count());
     if li_count > 0.0 && p_count > 0.0 && li_count / p_count > 5.0 {
         score *= 0.5;
     }
 
     // Word count quality check
-    let word_count = text.split_whitespace().count() as f64;
+    let word_count = usize_as_f64(text.split_whitespace().count());
     let avg_word_len = if word_count > 0.0 {
         text_len / word_count
     } else {
@@ -301,10 +320,10 @@ fn calculate_link_density(
         }
         let mut parts = Vec::new();
         collect_text_excluding(&a, exclude_ids, &mut parts);
-        link_text_len += parts.iter().map(|s| s.len()).sum::<usize>();
+        link_text_len += parts.iter().map(String::len).sum::<usize>();
     }
 
-    link_text_len as f64 / total_text_len
+    usize_as_f64(link_text_len) / total_text_len
 }
 
 /// Try to extract a title from within the content element.

@@ -91,7 +91,7 @@ async fn cmd_download(
     }
 
     println!("Found {} articles to download", to_process.len());
-    println!("Using {} concurrent workers", workers);
+    println!("Using {workers} concurrent workers");
     println!("{}\n", "=".repeat(60));
 
     let pb = ProgressBar::new(to_process.len() as u64);
@@ -257,7 +257,7 @@ fn cmd_stats(db_dir: &std::path::Path) -> anyhow::Result<()> {
         println!(
             "Successful:      {} ({:.1}%)",
             counts.success,
-            counts.success as f64 / counts.total as f64 * 100.0
+            percentage(counts.success, counts.total)
         );
         if counts.archived > 0 {
             println!("  From Archives: {}", counts.archived);
@@ -265,7 +265,7 @@ fn cmd_stats(db_dir: &std::path::Path) -> anyhow::Result<()> {
         println!(
             "Failed:          {} ({:.1}%)",
             counts.failed,
-            counts.failed as f64 / counts.total as f64 * 100.0
+            percentage(counts.failed, counts.total)
         );
         println!("Pending:         {}", counts.pending);
         println!("Total words:     {}", counts.total_words);
@@ -286,7 +286,7 @@ fn print_report(db: &db::Database, elapsed: f64) -> anyhow::Result<()> {
         println!(
             "Successfully saved: {} ({:.1}%)",
             counts.success,
-            counts.success as f64 / counts.total as f64 * 100.0
+            percentage(counts.success, counts.total)
         );
         if counts.archived > 0 {
             println!("  From Archives:    {}", counts.archived);
@@ -294,7 +294,7 @@ fn print_report(db: &db::Database, elapsed: f64) -> anyhow::Result<()> {
         println!(
             "Failed:             {} ({:.1}%)",
             counts.failed,
-            counts.failed as f64 / counts.total as f64 * 100.0
+            percentage(counts.failed, counts.total)
         );
         println!("Pending:            {}", counts.pending);
         println!("Total words:        {}", counts.total_words);
@@ -304,7 +304,7 @@ fn print_report(db: &db::Database, elapsed: f64) -> anyhow::Result<()> {
         );
         println!(
             "Average:            {:.2}s per article",
-            elapsed / counts.total as f64
+            elapsed / count_as_f64(counts.total)
         );
     }
     println!("{}", "=".repeat(60));
@@ -322,4 +322,16 @@ fn print_report(db: &db::Database, elapsed: f64) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn percentage(part: i64, total: i64) -> f64 {
+    count_as_f64(part) / count_as_f64(total) * 100.0
+}
+
+#[allow(
+    clippy::cast_precision_loss,
+    reason = "SQLite row counts are far below f64's exact integer range in this local archive"
+)]
+fn count_as_f64(count: i64) -> f64 {
+    count as f64
 }

@@ -47,10 +47,10 @@ pub fn extract(html: &str, url: &str) -> Option<ExtractionResult> {
     // Tier 2: Custom extraction with content scoring
     if let Some(candidate) = extract_main_content(&doc, &boilerplate_ids) {
         if candidate.text.len() > 50 {
-            let final_title = if !candidate.title.is_empty() {
-                candidate.title
-            } else {
+            let final_title = if candidate.title.is_empty() {
                 title.clone()
+            } else {
+                candidate.title
             };
             return Some(ExtractionResult {
                 title: final_title,
@@ -151,5 +151,101 @@ fn extract_baseline(doc: &scraper::Html, exclude_ids: &HashSet<ego_tree::NodeId>
         text.split_whitespace().collect::<Vec<_>>().join(" ")
     } else {
         String::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PARAGRAPHS: &str = r"
+        <p>Rust makes important state transitions explicit and reviewable.</p>
+        <p>Independent tests should try to falsify each consequential invariant.</p>
+        <p>Bounded concurrency keeps resource use predictable under large inputs.</p>
+        <p>Clear failure semantics keep missing data distinct from broken storage.</p>
+    ";
+
+    fn article_document(inserted_inside_article: &str, inserted_outside_article: &str) -> String {
+        format!(
+            r"
+            <html>
+              <head><title>Evidence First | Example Site</title></head>
+              <body>
+                {inserted_outside_article}
+                <article>
+                  <h1>Evidence First</h1>
+                  {inserted_inside_article}
+                  {PARAGRAPHS}
+                </article>
+              </body>
+            </html>
+            "
+        )
+    }
+
+    #[test]
+    fn inserting_boilerplate_is_a_neutral_transformation() {
+        let base = extract(&article_document("", ""), "https://example.com/article").unwrap();
+        let with_boilerplate = extract(
+            &article_document(
+                "<aside>INSIDE NOISE</aside><div class='newsletter'>MORE NOISE</div>",
+                "<nav>OUTSIDE NOISE</nav><footer>FOOTER NOISE</footer>",
+            ),
+            "https://example.com/article",
+        )
+        .unwrap();
+
+        assert_eq!(with_boilerplate.title, base.title);
+        assert_eq!(with_boilerplate.text, base.text);
+        assert!(!with_boilerplate.text.contains("NOISE"));
+    }
+
+    #[test]
+    fn json_ld_article_body_takes_precedence_over_html_candidates() {
+        let structured_body = "Structured evidence wins over fallback content. ".repeat(4);
+        let html = format!(
+            r#"
+            <html>
+              <head>
+                <title>Structured Title | Site Name</title>
+                <script type="application/ld+json">
+                  {{"@type":"Article","articleBody":{structured_body:?}}}
+                </script>
+              </head>
+              <body><article><p>{PARAGRAPHS}</p></article></body>
+            </html>
+            "#
+        );
+
+        let result = extract(&html, "https://example.com/structured").unwrap();
+        assert_eq!(result.title, "Structured Title");
+        assert_eq!(result.text, structured_body.trim());
+        assert!(!result.text.contains("Bounded concurrency"));
+    }
+
+    #[test]
+    fn malformed_json_ld_falls_back_without_leaking_script_text() {
+        let html = article_document(
+            r#"<script type="application/ld+json">{"articleBody": invalid}</script>"#,
+            "",
+        );
+
+        let result = extract(&html, "https://example.com/fallback").unwrap();
+        assert_eq!(result.title, "Evidence First");
+        assert!(result.text.contains("Bounded concurrency"));
+        assert!(!result.text.contains("articleBody"));
+        assert!(!result.text.contains("invalid"));
+    }
+
+    #[test]
+    fn title_site_suffixes_have_the_same_article_title() {
+        for separator in [" | ", " - ", " — "] {
+            let html = article_document("", "").replace(
+                "Evidence First | Example Site",
+                &format!("Evidence First{separator}Example Site"),
+            );
+            let result = extract(&html, "https://example.com/title").unwrap();
+            assert_eq!(result.title, "Evidence First");
+        }
     }
 }

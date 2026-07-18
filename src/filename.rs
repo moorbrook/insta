@@ -32,6 +32,28 @@ pub fn make_filename(url: &str, title: &str) -> String {
 mod tests {
     use super::*;
 
+    fn finite_text_corpus(max_length: usize) -> Vec<String> {
+        let alphabet = ['a', ' ', '\n', ':', '/', '深'];
+        let mut corpus = vec![String::new()];
+        let mut frontier = vec![String::new()];
+
+        for _ in 0..max_length {
+            frontier = frontier
+                .iter()
+                .flat_map(|prefix| {
+                    alphabet.iter().map(move |character| {
+                        let mut value = prefix.clone();
+                        value.push(*character);
+                        value
+                    })
+                })
+                .collect();
+            corpus.extend(frontier.iter().cloned());
+        }
+
+        corpus
+    }
+
     #[test]
     fn test_article_id_deterministic() {
         let id = get_article_id("https://example.com/article");
@@ -64,7 +86,58 @@ mod tests {
     #[test]
     fn test_make_filename() {
         let f = make_filename("https://example.com", "Test Article");
-        assert!(f.ends_with(".txt"));
+        assert!(std::path::Path::new(&f)
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("txt")));
         assert!(f.contains("_Test_Article"));
+    }
+
+    #[test]
+    fn sanitizer_laws_hold_for_a_finite_boundary_alphabet() {
+        for input in finite_text_corpus(4) {
+            for max_length in 8..=12 {
+                let sanitized = sanitize_filename(&input, max_length);
+
+                assert!(!sanitized.is_empty(), "empty result for {input:?}");
+                assert_eq!(
+                    sanitize_filename(&sanitized, max_length),
+                    sanitized,
+                    "not idempotent for {input:?}"
+                );
+                assert!(
+                    sanitized.chars().count() <= max_length,
+                    "length bound exceeded for {input:?}"
+                );
+                assert!(
+                    !sanitized.chars().any(char::is_whitespace),
+                    "whitespace survived for {input:?}"
+                );
+                assert!(
+                    !sanitized.chars().any(|character| matches!(
+                        character,
+                        '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*'
+                    )),
+                    "forbidden character survived for {input:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn adding_forbidden_punctuation_is_a_neutral_transformation() {
+        assert_eq!(
+            sanitize_filename("<Hello>: \tWorld?", 80),
+            sanitize_filename("Hello World", 80)
+        );
+    }
+
+    #[test]
+    fn article_ids_are_fixed_width_lowercase_hex() {
+        for suffix in finite_text_corpus(3) {
+            let id = get_article_id(&format!("https://example.com/{suffix}"));
+            assert_eq!(id.len(), 12);
+            assert!(id.bytes().all(|byte| byte.is_ascii_hexdigit()));
+            assert_eq!(id, id.to_ascii_lowercase());
+        }
     }
 }

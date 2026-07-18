@@ -96,8 +96,7 @@ fn extract_domain(url_str: &str) -> Option<String> {
 }
 
 pub fn is_paywalled(url_str: &str) -> bool {
-    extract_domain(url_str)
-        .is_some_and(|d| PAYWALLED_DOMAINS.contains(&d.as_str()))
+    extract_domain(url_str).is_some_and(|d| PAYWALLED_DOMAINS.contains(&d.as_str()))
 }
 
 pub fn get_paywalled_domain(url_str: &str) -> Option<String> {
@@ -132,5 +131,31 @@ mod tests {
             Some("wsj.com".to_string())
         );
         assert_eq!(get_paywalled_domain("https://example.com"), None);
+    }
+
+    #[test]
+    fn path_query_fragment_and_scheme_do_not_change_classification() {
+        for url in [
+            "https://nytimes.com",
+            "http://nytimes.com/story",
+            "https://nytimes.com/story?gift=1",
+            "https://nytimes.com/story#comments",
+            "HTTPS://WWW.NYTIMES.COM/story",
+        ] {
+            assert!(is_paywalled(url), "expected paywall classification: {url}");
+        }
+    }
+
+    #[test]
+    fn domain_substrings_and_typosquats_are_not_classified() {
+        for url in [
+            "https://notnytimes.com/story",
+            "https://nytimes.com.evil.example/story",
+            "https://example.com/?next=https://nytimes.com",
+            "https://nytimes.com@example.com/story",
+            "not a URL mentioning nytimes.com",
+        ] {
+            assert!(!is_paywalled(url), "false paywall classification: {url}");
+        }
     }
 }

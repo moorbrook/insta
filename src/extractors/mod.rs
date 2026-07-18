@@ -9,6 +9,24 @@ pub struct ExtractedArticle {
     pub content: String,
 }
 
+/// Match an exact domain or one of its subdomains.
+///
+/// Parsing the host avoids treating a domain mentioned in a path, query,
+/// fragment, or username as the destination host.
+pub(crate) fn host_is_domain_or_subdomain(url: &str, domain: &str) -> bool {
+    let Ok(url) = url::Url::parse(url) else {
+        return false;
+    };
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+
+    host == domain
+        || host
+            .strip_suffix(domain)
+            .is_some_and(|prefix| prefix.ends_with('.'))
+}
+
 /// Maximum response body size (50 MB). Prevents memory exhaustion from hostile pages.
 const MAX_BODY_BYTES: u64 = 50 * 1024 * 1024;
 
@@ -24,4 +42,42 @@ pub async fn read_body(response: reqwest::Response) -> anyhow::Result<String> {
     }
     // text() respects charset from Content-Type headers
     Ok(response.text().await?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::host_is_domain_or_subdomain;
+
+    #[test]
+    fn host_matching_accepts_exact_domains_and_subdomains() {
+        assert!(host_is_domain_or_subdomain(
+            "https://youtube.com/watch?v=1",
+            "youtube.com"
+        ));
+        assert!(host_is_domain_or_subdomain(
+            "https://www.youtube.com/watch?v=1",
+            "youtube.com"
+        ));
+        assert!(host_is_domain_or_subdomain(
+            "HTTPS://WWW.YOUTUBE.COM/watch?v=1",
+            "youtube.com"
+        ));
+    }
+
+    #[test]
+    fn host_matching_rejects_domain_text_outside_the_host() {
+        for url in [
+            "https://example.com/youtube.com/watch",
+            "https://example.com/?next=https://youtube.com",
+            "https://youtube.com@example.com/watch",
+            "https://notyoutube.com/watch",
+            "https://youtube.com.evil.example/watch",
+            "not a url containing youtube.com",
+        ] {
+            assert!(
+                !host_is_domain_or_subdomain(url, "youtube.com"),
+                "misclassified {url}"
+            );
+        }
+    }
 }

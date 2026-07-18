@@ -40,7 +40,7 @@ async fn get_archive_snapshot(
     {
         if response.status().is_success() {
             let final_url = response.url().to_string();
-            if final_url.contains("archive.ph") {
+            if super::host_is_domain_or_subdomain(&final_url, "archive.ph") {
                 return Some((final_url, ArchiveSource::ArchivePh));
             }
         }
@@ -71,9 +71,8 @@ pub async fn extract(
     url: &str,
     timeout: Duration,
 ) -> anyhow::Result<Option<ExtractedArticle>> {
-    let (snapshot_url, source) = match get_archive_snapshot(client, url).await {
-        Some(s) => s,
-        None => return Ok(None),
+    let Some((snapshot_url, source)) = get_archive_snapshot(client, url).await else {
+        return Ok(None);
     };
 
     // Fetch the archived page

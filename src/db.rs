@@ -217,6 +217,7 @@ impl Database {
 
     pub fn search(&self, query: &str, limit: usize) -> anyhow::Result<Vec<SearchResult>> {
         let conn = self.lock_conn()?;
+        let limit = i64::try_from(limit).context("search result limit exceeds SQLite range")?;
         let mut stmt = conn.prepare(
             "SELECT a.id, a.title, a.url, a.folder, a.word_count,
                     snippet(articles_fts, 1, '>>>','<<<', '...', 30) as snip
@@ -226,7 +227,7 @@ impl Database {
              ORDER BY rank
              LIMIT ?2",
         )?;
-        let rows = stmt.query_map(params![query, limit as i64], |row| {
+        let rows = stmt.query_map(params![query, limit], |row| {
             Ok(SearchResult {
                 id: row.get(0)?,
                 title: row.get(1)?,
@@ -261,9 +262,10 @@ impl Database {
 
     pub fn get_failed_urls(&self, limit: usize) -> anyhow::Result<Vec<(String, Option<String>)>> {
         let conn = self.lock_conn()?;
+        let limit = i64::try_from(limit).context("failed URL limit exceeds SQLite range")?;
         let mut stmt = conn
             .prepare("SELECT url, error_message FROM articles WHERE status = 'failed' LIMIT ?1")?;
-        let rows = stmt.query_map(params![limit as i64], |row| {
+        let rows = stmt.query_map(params![limit], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
         })?;
         let mut result = Vec::new();
@@ -271,5 +273,139 @@ impl Database {
             result.push(row?);
         }
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn initialized_database() -> (TempDir, Database) {
+        let directory = tempfile::tempdir().unwrap();
+        let database = Database::open(&directory.path().join("index.db")).unwrap();
+        database.init_schema().unwrap();
+        (directory, database)
+    }
+
+    fn article_row(url: &str, title: &str) -> ArticleRow {
+        ArticleRow {
+            url: url.to_string(),
+            title: title.to_string(),
+            _selection: String::new(),
+            folder: "Unread".to_string(),
+            timestamp: "1700000000".to_string(),
+            tags: "[]".to_string(),
+        }
+    }
+
+    #[test]
+    fn success_updates_replace_fts_content_without_stale_terms() {
+        let (_directory, database) = initialized_database();
+        let row = article_row("https://example.com/article", "First title");
+        database.insert_pending(&row).unwrap();
+
+        let pending = database.get_status_counts().unwrap();
+        assert_eq!(pending.total, 1);
+        assert_eq!(pending.pending, 1);
+
+        database
+            .mark_success(
+                &row.url,
+                &row.title,
+                "article.txt",
+                "an orchard contains the original searchable phrase",
+                7,
+                false,
+            )
+            .unwrap();
+        assert_eq!(database.search("orchard", 10).unwrap().len(), 1);
+
+        database
+            .mark_success(
+                &row.url,
+                "Revised title",
+                "article.txt",
+                "a meadow contains the replacement searchable phrase",
+                7,
+                false,
+            )
+            .unwrap();
+
+        assert!(database.search("orchard", 10).unwrap().is_empty());
+        let revised = database.search("meadow", 10).unwrap();
+        assert_eq!(revised.len(), 1);
+        assert_eq!(revised[0].title.as_deref(), Some("Revised title"));
+
+        let article = database.read_by_id(revised[0].id).unwrap().unwrap();
+        assert_eq!(article.title.as_deref(), Some("Revised title"));
+        assert!(article.content.unwrap().contains("replacement"));
+
+        let counts = database.get_status_counts().unwrap();
+        assert_eq!(counts.total, 1);
+        assert_eq!(counts.success, 1);
+        assert_eq!(counts.archived, 0);
+        assert_eq!(counts.failed, 0);
+        assert_eq!(counts.pending, 0);
+        assert_eq!(counts.total_words, 7);
+    }
+
+    #[test]
+    fn status_counts_partition_all_rows() {
+        let (_directory, database) = initialized_database();
+        let live = article_row("https://example.com/live", "Live");
+        let archived = article_row("https://example.com/archived", "Archived");
+        let failed = article_row("https://example.com/failed", "Failed");
+
+        for row in [&live, &archived, &failed] {
+            database.insert_pending(row).unwrap();
+        }
+        database
+            .mark_success(&live.url, &live.title, "live.txt", "live content", 2, false)
+            .unwrap();
+        database
+            .mark_success(
+                &archived.url,
+                &archived.title,
+                "archived.txt",
+                "archived content",
+                2,
+                true,
+            )
+            .unwrap();
+        database.mark_failed(&failed.url, "network error").unwrap();
+
+        let counts = database.get_status_counts().unwrap();
+        assert_eq!(counts.total, 3);
+        assert_eq!(counts.success, 2);
+        assert_eq!(counts.archived, 1);
+        assert_eq!(counts.failed, 1);
+        assert_eq!(counts.pending, 0);
+        assert_eq!(
+            counts.total,
+            counts.success + counts.failed + counts.pending
+        );
+        assert_eq!(counts.total_words, 4);
+        assert!(database.is_already_successful(&live.url).unwrap());
+        assert!(database.is_already_failed(&failed.url).unwrap());
+    }
+
+    #[test]
+    fn schema_initialization_is_idempotent() {
+        let (_directory, database) = initialized_database();
+        database.init_schema().unwrap();
+        database.init_schema().unwrap();
+        assert_eq!(database.get_status_counts().unwrap().total, 0);
+    }
+
+    #[test]
+    fn missing_row_is_distinct_from_a_broken_schema() {
+        let (_directory, database) = initialized_database();
+        assert!(database.read_by_id(404).unwrap().is_none());
+
+        let directory = tempfile::tempdir().unwrap();
+        let database_without_schema =
+            Database::open(&directory.path().join("missing-schema.db")).unwrap();
+        assert!(database_without_schema.read_by_id(404).is_err());
     }
 }

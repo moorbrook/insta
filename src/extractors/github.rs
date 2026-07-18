@@ -5,8 +5,9 @@ use serde::Deserialize;
 use std::sync::LazyLock;
 use std::time::Duration;
 
-static GITHUB_REPO_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"https?://(?:www\.)?github\.com/([^/]+)/([^/?#]+)/?(?:[?#].*)?$").unwrap());
+static GITHUB_REPO_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"https?://(?:www\.)?github\.com/([^/]+)/([^/?#]+)/?(?:[?#].*)?$").unwrap()
+});
 
 static GITHUB_BLOB_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"https?://(?:www\.)?github\.com/([^/]+)/([^/]+)/blob/([^/]+)/(.+)").unwrap()
@@ -18,7 +19,8 @@ struct GitHubReadme {
 }
 
 pub fn is_github(url: &str) -> bool {
-    url.contains("github.com") && !url.contains("gist.")
+    super::host_is_domain_or_subdomain(url, "github.com")
+        && !super::host_is_domain_or_subdomain(url, "gist.github.com")
 }
 
 pub async fn extract(
@@ -45,9 +47,8 @@ async fn extract_blob(
     url: &str,
     timeout: Duration,
 ) -> anyhow::Result<Option<ExtractedArticle>> {
-    let caps = match GITHUB_BLOB_RE.captures(url) {
-        Some(c) => c,
-        None => return Ok(None),
+    let Some(caps) = GITHUB_BLOB_RE.captures(url) else {
+        return Ok(None);
     };
 
     let owner = &caps[1];
@@ -87,9 +88,8 @@ async fn extract_readme(
     url: &str,
     timeout: Duration,
 ) -> anyhow::Result<Option<ExtractedArticle>> {
-    let caps = match GITHUB_REPO_RE.captures(url) {
-        Some(c) => c,
-        None => return Ok(None),
+    let Some(caps) = GITHUB_REPO_RE.captures(url) else {
+        return Ok(None);
     };
 
     let owner = &caps[1];
@@ -118,4 +118,20 @@ async fn extract_readme(
         title: format!("{owner}/{repo}"),
         content,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_github;
+
+    #[test]
+    fn github_classification_uses_the_destination_host_and_excludes_gists() {
+        assert!(is_github("https://github.com/rust-lang/rust"));
+        assert!(is_github(
+            "https://www.github.com/rust-lang/rust/blob/main/README.md"
+        ));
+        assert!(!is_github("https://gist.github.com/example/123"));
+        assert!(!is_github("https://example.com/?next=github.com/repo"));
+        assert!(!is_github("https://github.com.evil.example/repo"));
+    }
 }
