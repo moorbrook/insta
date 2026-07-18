@@ -8,7 +8,7 @@ pub struct ArticleRow {
     #[serde(rename = "Title")]
     pub title: String,
     #[serde(rename = "Selection")]
-    pub selection: String,
+    _selection: String,
     #[serde(rename = "Folder")]
     pub folder: String,
     #[serde(rename = "Timestamp")]

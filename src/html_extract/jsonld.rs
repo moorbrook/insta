@@ -10,7 +10,7 @@ static JSONLD_SEL: LazyLock<scraper::Selector> =
 pub fn extract_jsonld_body(doc: &scraper::Html) -> Option<String> {
     let selector = &*JSONLD_SEL;
 
-    for script in doc.select(&selector) {
+    for script in doc.select(selector) {
         let json_text = script.text().collect::<String>();
         if let Some(body) = parse_jsonld_article_body(&json_text) {
             return Some(body);

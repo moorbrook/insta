@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Semaphore;
 
 use crate::csv_reader::ArticleRow;
 use crate::db::Database;
@@ -15,27 +14,20 @@ fn is_scraper_hostile(url: &str) -> bool {
 }
 
 pub enum ExtractionResult {
-    Success { filename: String },
-    Failed { error: String },
+    Success,
+    Failed,
 }
 
 pub struct Extractor {
     client: reqwest::Client,
     db: Arc<Database>,
     output_dir: PathBuf,
-    semaphore: Arc<Semaphore>,
     retries: u32,
     timeout: Duration,
 }
 
 impl Extractor {
-    pub fn new(
-        db: Arc<Database>,
-        output_dir: PathBuf,
-        workers: u32,
-        retries: u32,
-        timeout_secs: u64,
-    ) -> Self {
+    pub fn new(db: Arc<Database>, output_dir: PathBuf, retries: u32, timeout_secs: u64) -> Self {
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::limited(10))
             .build()
@@ -45,15 +37,12 @@ impl Extractor {
             client,
             db,
             output_dir,
-            semaphore: Arc::new(Semaphore::new(workers as usize)),
             retries,
             timeout: Duration::from_secs(timeout_secs),
         }
     }
 
     pub async fn process_article(&self, row: &ArticleRow) -> ExtractionResult {
-        let _permit = self.semaphore.acquire().await.unwrap();
-
         let mut last_error = String::new();
 
         for attempt in 0..self.retries {
@@ -85,14 +74,18 @@ impl Extractor {
                     // Retry DB update separately — file is already saved to disk
                     let mut db_ok = false;
                     for _db_attempt in 0..3 {
-                        if self.db.mark_success(
-                            &row.url,
-                            final_title,
-                            &filename,
-                            &article.content,
-                            word_count,
-                            is_archived,
-                        ).is_ok() {
+                        if self
+                            .db
+                            .mark_success(
+                                &row.url,
+                                final_title,
+                                &filename,
+                                &article.content,
+                                word_count,
+                                is_archived,
+                            )
+                            .is_ok()
+                        {
                             db_ok = true;
                             break;
                         }
@@ -104,7 +97,7 @@ impl Extractor {
                         break;
                     }
 
-                    return ExtractionResult::Success { filename };
+                    return ExtractionResult::Success;
                 }
                 Ok(None) => {
                     if attempt == self.retries - 1 {
@@ -128,7 +121,7 @@ impl Extractor {
         if let Err(e) = self.db.mark_failed(&row.url, &last_error) {
             eprintln!("Warning: failed to update DB for {}: {e}", row.url);
         }
-        ExtractionResult::Failed { error: last_error }
+        ExtractionResult::Failed
     }
 
     async fn extract_article(
@@ -159,9 +152,7 @@ impl Extractor {
 
         // 4. Paywalled sites -> try Instapaper API (requires OAuth setup via `insta login`)
         if is_paywalled(url) {
-            if let Some(article) =
-                instapaper::extract(&self.client, url, self.timeout).await?
-            {
+            if let Some(article) = instapaper::extract(&self.client, url, self.timeout).await? {
                 return Ok(Some(article));
             }
         }

@@ -1,18 +1,18 @@
+mod bounded;
 mod cli;
 mod csv_reader;
 mod db;
 mod extractor;
 mod extractors;
 mod filename;
-mod paywall;
 mod html_extract;
+mod paywall;
 
 use clap::Parser;
 use cli::Command;
 use extractor::ExtractionResult;
 use indicatif::{ProgressBar, ProgressStyle};
-use rayon::prelude::*;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -29,7 +29,15 @@ async fn main() -> anyhow::Result<()> {
             timeout,
             retry_failed,
         } => {
-            cmd_download(csv_file, output_dir, workers, retries, timeout, retry_failed).await
+            cmd_download(
+                csv_file,
+                output_dir,
+                workers,
+                retries,
+                timeout,
+                retry_failed,
+            )
+            .await
         }
         Command::Search {
             query,
@@ -64,22 +72,14 @@ async fn cmd_download(
     let all_rows = csv_reader::read_csv(&csv_file)?;
     println!("Loaded {} articles from CSV", all_rows.len());
 
-    let to_process: Vec<_> = {
-        let db_ref = &db;
-        all_rows
-            .par_iter()
-            .filter(|row| {
-                if db_ref.is_already_successful(&row.url).unwrap_or(false) {
-                    return false;
-                }
-                if !retry_failed && db_ref.is_already_failed(&row.url).unwrap_or(false) {
-                    return false;
-                }
-                true
-            })
-            .cloned()
-            .collect()
-    };
+    let to_process: Vec<_> = all_rows
+        .into_iter()
+        .filter_map(|row| match should_process(&db, &row.url, retry_failed) {
+            Ok(true) => Some(Ok(row)),
+            Ok(false) => None,
+            Err(error) => Some(Err(error)),
+        })
+        .collect::<anyhow::Result<_>>()?;
 
     for row in &to_process {
         db.insert_pending(row)?;
@@ -102,60 +102,61 @@ async fn cmd_download(
             .progress_chars("##-"),
     );
 
-    let success_count = Arc::new(AtomicU64::new(0));
-    let failed_count = Arc::new(AtomicU64::new(0));
+    let worker_limit = NonZeroUsize::new(workers as usize)
+        .ok_or_else(|| anyhow::anyhow!("worker count must be greater than zero"))?;
+    let mut success_count = 0_u64;
+    let mut failed_count = 0_u64;
 
     let ext = Arc::new(extractor::Extractor::new(
         db.clone(),
         output_dir.clone(),
-        workers,
         retries,
         timeout,
     ));
 
-    let mut handles = Vec::with_capacity(to_process.len());
-    for row in to_process {
-        let ext = ext.clone();
-        let pb = pb.clone();
-        let sc = success_count.clone();
-        let fc = failed_count.clone();
-        handles.push(tokio::spawn(async move {
-            let result = ext.process_article(&row).await;
+    bounded::for_each_bounded(
+        to_process,
+        worker_limit,
+        move |row| {
+            let ext = Arc::clone(&ext);
+            async move { ext.process_article(&row).await }
+        },
+        |result| {
             match result {
-                ExtractionResult::Success { .. } => {
-                    sc.fetch_add(1, Ordering::Relaxed);
-                }
-                ExtractionResult::Failed { .. } => {
-                    fc.fetch_add(1, Ordering::Relaxed);
+                Ok(ExtractionResult::Success) => success_count += 1,
+                Ok(ExtractionResult::Failed) => failed_count += 1,
+                Err(error) => {
+                    eprintln!("Warning: download task panicked: {error}");
+                    failed_count += 1;
                 }
             }
             pb.inc(1);
-            pb.set_message(format!(
-                "OK: {} Fail: {}",
-                sc.load(Ordering::Relaxed),
-                fc.load(Ordering::Relaxed)
-            ));
-        }));
-    }
-
-    for handle in handles {
-        if let Err(e) = handle.await {
-            eprintln!("Warning: download task panicked: {e}");
-            failed_count.fetch_add(1, Ordering::Relaxed);
-        }
-    }
+            pb.set_message(format!("OK: {success_count} Fail: {failed_count}"));
+        },
+    )
+    .await;
     pb.finish_with_message("Done");
 
     let elapsed = start.elapsed().as_secs_f64();
     print_report(&db, elapsed)?;
 
-    let s = success_count.load(Ordering::Relaxed);
-    let f = failed_count.load(Ordering::Relaxed);
-    if s == 0 && f > 0 {
-        anyhow::bail!("All {f} article(s) failed to download. Run with --retry-failed to try again.");
+    if success_count == 0 && failed_count > 0 {
+        anyhow::bail!(
+            "All {failed_count} article(s) failed to download. Run with --retry-failed to try again."
+        );
     }
 
     Ok(())
+}
+
+fn should_process(db: &db::Database, url: &str, retry_failed: bool) -> anyhow::Result<bool> {
+    if db.is_already_successful(url)? {
+        return Ok(false);
+    }
+    if !retry_failed && db.is_already_failed(url)? {
+        return Ok(false);
+    }
+    Ok(true)
 }
 
 fn open_db(db_dir: &std::path::Path) -> anyhow::Result<db::Database> {
@@ -171,11 +172,7 @@ fn open_db(db_dir: &std::path::Path) -> anyhow::Result<db::Database> {
     Ok(db)
 }
 
-fn cmd_search(
-    query: &str,
-    db_dir: &std::path::Path,
-    limit: usize,
-) -> anyhow::Result<()> {
+fn cmd_search(query: &str, db_dir: &std::path::Path, limit: usize) -> anyhow::Result<()> {
     let db = open_db(db_dir)?;
 
     let results = db.search(query, limit).map_err(|e| {

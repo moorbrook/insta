@@ -1,5 +1,5 @@
 use anyhow::Context;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::path::Path;
 use std::sync::{Mutex, MutexGuard};
 
@@ -19,10 +19,8 @@ pub struct SearchResult {
 }
 
 pub struct Article {
-    pub id: i64,
     pub title: Option<String>,
     pub url: String,
-    pub folder: Option<String>,
     pub word_count: Option<i64>,
     pub content: Option<String>,
 }
@@ -95,9 +93,7 @@ impl Database {
         )?;
 
         // Migrate: if old schema had content_preview but no content column, add it
-        let has_content: bool = conn
-            .prepare("SELECT content FROM articles LIMIT 0")
-            .is_ok();
+        let has_content: bool = conn.prepare("SELECT content FROM articles LIMIT 0").is_ok();
         if !has_content {
             conn.execute_batch(
                 "ALTER TABLE articles ADD COLUMN content TEXT;
@@ -112,9 +108,7 @@ impl Database {
     /// Check that required tables exist, bail with a friendly message if not.
     pub fn ensure_schema(&self) -> anyhow::Result<()> {
         let conn = self.lock_conn()?;
-        let has_table: bool = conn
-            .prepare("SELECT 1 FROM articles LIMIT 0")
-            .is_ok();
+        let has_table: bool = conn.prepare("SELECT 1 FROM articles LIMIT 0").is_ok();
         if !has_table {
             anyhow::bail!(
                 "Database exists but has no articles table.\nRun `insta download <export.csv>` first."
@@ -125,13 +119,15 @@ impl Database {
 
     pub fn is_already_successful(&self, url: &str) -> anyhow::Result<bool> {
         let conn = self.lock_conn()?;
-        let mut stmt = conn.prepare_cached("SELECT 1 FROM articles WHERE url = ? AND status = 'success'")?;
+        let mut stmt =
+            conn.prepare_cached("SELECT 1 FROM articles WHERE url = ? AND status = 'success'")?;
         Ok(stmt.exists(params![url])?)
     }
 
     pub fn is_already_failed(&self, url: &str) -> anyhow::Result<bool> {
         let conn = self.lock_conn()?;
-        let mut stmt = conn.prepare_cached("SELECT 1 FROM articles WHERE url = ? AND status = 'failed'")?;
+        let mut stmt =
+            conn.prepare_cached("SELECT 1 FROM articles WHERE url = ? AND status = 'failed'")?;
         Ok(stmt.exists(params![url])?)
     }
 
@@ -219,11 +215,7 @@ impl Database {
         })
     }
 
-    pub fn search(
-        &self,
-        query: &str,
-        limit: usize,
-    ) -> anyhow::Result<Vec<SearchResult>> {
+    pub fn search(&self, query: &str, limit: usize) -> anyhow::Result<Vec<SearchResult>> {
         let conn = self.lock_conn()?;
         let mut stmt = conn.prepare(
             "SELECT a.id, a.title, a.url, a.folder, a.word_count,
@@ -253,29 +245,24 @@ impl Database {
 
     pub fn read_by_id(&self, id: i64) -> anyhow::Result<Option<Article>> {
         let conn = self.lock_conn()?;
-        let mut stmt = conn.prepare_cached(
-            "SELECT id, title, url, folder, word_count, content FROM articles WHERE id = ?1",
-        )?;
-        let result = stmt
-            .query_row(params![id], |row| {
-                Ok(Article {
-                    id: row.get(0)?,
-                    title: row.get(1)?,
-                    url: row.get(2)?,
-                    folder: row.get(3)?,
-                    word_count: row.get(4)?,
-                    content: row.get(5)?,
-                })
+        let mut stmt = conn
+            .prepare_cached("SELECT title, url, word_count, content FROM articles WHERE id = ?1")?;
+        let result = stmt.query_row(params![id], |row| {
+            Ok(Article {
+                title: row.get(0)?,
+                url: row.get(1)?,
+                word_count: row.get(2)?,
+                content: row.get(3)?,
             })
-            .ok();
+        });
+        let result = result.optional()?;
         Ok(result)
     }
 
     pub fn get_failed_urls(&self, limit: usize) -> anyhow::Result<Vec<(String, Option<String>)>> {
         let conn = self.lock_conn()?;
-        let mut stmt = conn.prepare(
-            "SELECT url, error_message FROM articles WHERE status = 'failed' LIMIT ?1",
-        )?;
+        let mut stmt = conn
+            .prepare("SELECT url, error_message FROM articles WHERE status = 'failed' LIMIT ?1")?;
         let rows = stmt.query_map(params![limit as i64], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
         })?;

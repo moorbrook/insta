@@ -2,6 +2,7 @@
 name = "instapaper-dl"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.88"
 license = "MIT"
 
 [[bin]]
@@ -25,10 +26,8 @@ base64 = "0.22"
 anyhow = "1"
 regex = "1"
 tempfile = "3"
-rayon = "1"
 scraper = "0.22"
 ego-tree = "0.10"
-urlencoding = "2"
 
 [profile.release]
 opt-level = 3
