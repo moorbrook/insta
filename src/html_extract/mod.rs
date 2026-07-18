@@ -7,7 +7,7 @@
 //! 1. JSON-LD articleBody (structured data)
 //! 2. Custom extraction: CSS-targeted content areas + boilerplate removal + link density filtering
 //! 3. Readability fallback (Mozilla algorithm)
-//! 4. Baseline fallback (all text from <body>)
+//! 4. Baseline fallback (all text from `<body>`)
 
 mod cleaning;
 mod jsonld;

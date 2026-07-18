@@ -53,7 +53,7 @@ pub enum Command {
 
     /// Read full article content by ID
     Read {
-        /// Article ID (shown in search results as [ID])
+        /// Article ID (shown in search results as `[ID]`)
         id: i64,
 
         /// Path to articles directory containing index.db
