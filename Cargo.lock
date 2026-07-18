@@ -1078,6 +1078,7 @@ dependencies = [
  "clap",
  "csv",
  "ego-tree",
+ "encoding_rs",
  "hex",
  "indicatif",
  "readability",
