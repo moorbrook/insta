@@ -3,11 +3,13 @@
 use serde_json::Value;
 use std::sync::LazyLock;
 
-static JSONLD_SEL: LazyLock<scraper::Selector> =
-    LazyLock::new(|| scraper::Selector::parse("script[type='application/ld+json']").unwrap());
+static JSONLD_SEL: LazyLock<scraper::Selector> = LazyLock::new(|| {
+    #[allow(clippy::unwrap_used, reason = "hardcoded CSS selector must parse")]
+    scraper::Selector::parse("script[type='application/ld+json']").unwrap()
+});
 
 /// Try to extract articleBody from JSON-LD script tags.
-pub fn extract_jsonld_body(doc: &scraper::Html) -> Option<String> {
+pub(super) fn extract_jsonld_body(doc: &scraper::Html) -> Option<String> {
     let selector = &*JSONLD_SEL;
 
     for script in doc.select(selector) {

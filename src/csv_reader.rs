@@ -1,8 +1,10 @@
 use serde::Deserialize;
 use std::path::Path;
 
+use crate::error::CsvError;
+
 #[derive(Debug, Clone, Deserialize)]
-pub struct ArticleRow {
+pub(crate) struct ArticleRow {
     #[serde(rename = "URL")]
     pub url: String,
     #[serde(rename = "Title")]
@@ -17,24 +19,19 @@ pub struct ArticleRow {
     pub tags: String,
 }
 
-pub fn read_csv(path: &Path) -> anyhow::Result<Vec<ArticleRow>> {
-    let mut reader = csv::Reader::from_path(path).map_err(|e| {
+pub(crate) fn read_csv(path: &Path) -> Result<Vec<ArticleRow>, CsvError> {
+    let mut reader = csv::Reader::from_path(path).map_err(|source| {
         if path.exists() {
-            anyhow::anyhow!("Failed to read CSV file: {e}")
+            CsvError::Read { source }
         } else {
-            anyhow::anyhow!(
-                "File not found: {}\n  Export your bookmarks from https://www.instapaper.com/user",
-                path.display()
-            )
+            CsvError::NotFound {
+                path: path.to_path_buf(),
+            }
         }
     })?;
     let mut articles = Vec::new();
     for result in reader.deserialize() {
-        let row: ArticleRow = result.map_err(|e| {
-            anyhow::anyhow!(
-                "Invalid CSV format: {e}\n  Expected Instapaper export with columns: URL, Title, Selection, Folder, Timestamp, Tags"
-            )
-        })?;
+        let row: ArticleRow = result.map_err(|source| CsvError::Invalid { source })?;
         articles.push(row);
     }
     Ok(articles)

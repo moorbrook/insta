@@ -9,7 +9,7 @@ use tokio::task::{JoinError, JoinSet};
 /// Capacity is acquired before spawning because this function never places more
 /// than `limit` tasks in the [`JoinSet`]. Dropping this future drops the set,
 /// which aborts all still-owned tasks.
-pub async fn for_each_bounded<I, Item, MakeFuture, Fut, Output, OnComplete>(
+pub(crate) async fn for_each_bounded<I, Item, MakeFuture, Fut, Output, OnComplete>(
     items: I,
     limit: NonZeroUsize,
     mut make_future: MakeFuture,
@@ -44,6 +44,14 @@ pub async fn for_each_bounded<I, Item, MakeFuture, Fut, Output, OnComplete>(
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::print_stdout,
+        clippy::print_stderr
+    )]
+
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;

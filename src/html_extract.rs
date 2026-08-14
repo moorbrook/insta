@@ -19,13 +19,14 @@ use scoring::extract_main_content;
 use std::collections::HashSet;
 
 /// Result of HTML content extraction.
-pub struct ExtractionResult {
+#[derive(Debug)]
+pub(crate) struct ExtractionResult {
     pub title: String,
     pub text: String,
 }
 
 /// Extract article content from HTML using a multi-tier approach.
-pub fn extract(html: &str, url: &str) -> Option<ExtractionResult> {
+pub(crate) fn extract(html: &str, url: &str) -> Option<ExtractionResult> {
     // Parse HTML once for all tiers
     let doc = scraper::Html::parse_document(html);
 
@@ -80,10 +81,14 @@ pub fn extract(html: &str, url: &str) -> Option<ExtractionResult> {
 fn extract_title(doc: &scraper::Html) -> String {
     use std::sync::LazyLock;
 
-    static TITLE_SEL: LazyLock<scraper::Selector> =
-        LazyLock::new(|| scraper::Selector::parse("title").unwrap());
-    static H1_SEL: LazyLock<scraper::Selector> =
-        LazyLock::new(|| scraper::Selector::parse("h1").unwrap());
+    static TITLE_SEL: LazyLock<scraper::Selector> = LazyLock::new(|| {
+        #[allow(clippy::unwrap_used, reason = "hardcoded CSS selector must parse")]
+        scraper::Selector::parse("title").unwrap()
+    });
+    static H1_SEL: LazyLock<scraper::Selector> = LazyLock::new(|| {
+        #[allow(clippy::unwrap_used, reason = "hardcoded CSS selector must parse")]
+        scraper::Selector::parse("h1").unwrap()
+    });
 
     // Try <title> first
     if let Some(el) = doc.select(&TITLE_SEL).next() {
@@ -141,8 +146,10 @@ fn try_readability(html: &str, url_str: &str) -> Option<ExtractionResult> {
 fn extract_baseline(doc: &scraper::Html, exclude_ids: &HashSet<ego_tree::NodeId>) -> String {
     use std::sync::LazyLock;
 
-    static BODY_SEL: LazyLock<scraper::Selector> =
-        LazyLock::new(|| scraper::Selector::parse("body").unwrap());
+    static BODY_SEL: LazyLock<scraper::Selector> = LazyLock::new(|| {
+        #[allow(clippy::unwrap_used, reason = "hardcoded CSS selector must parse")]
+        scraper::Selector::parse("body").unwrap()
+    });
 
     if let Some(body) = doc.select(&BODY_SEL).next() {
         let mut parts = Vec::new();
@@ -156,6 +163,14 @@ fn extract_baseline(doc: &scraper::Html, exclude_ids: &HashSet<ego_tree::NodeId>
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::print_stdout,
+        clippy::print_stderr
+    )]
+
     use super::*;
 
     const PARAGRAPHS: &str = r"

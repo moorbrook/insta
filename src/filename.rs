@@ -2,15 +2,20 @@ use regex::Regex;
 use sha2::{Digest, Sha256};
 use std::sync::LazyLock;
 
-static RE_BAD_CHARS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"[<>:"/\\|?*]"#).unwrap());
-static RE_WHITESPACE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").unwrap());
+#[allow(clippy::expect_used, reason = "hardcoded regex must compile")]
+static RE_BAD_CHARS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"[<>:"/\\|?*]"#).expect("filename forbidden-char regex must compile")
+});
+#[allow(clippy::expect_used, reason = "hardcoded regex must compile")]
+static RE_WHITESPACE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\s+").expect("filename whitespace regex must compile"));
 
-pub fn get_article_id(url: &str) -> String {
+pub(crate) fn get_article_id(url: &str) -> String {
     let hash = Sha256::digest(url.as_bytes());
     hex::encode(&hash[..6]) // first 6 bytes = 12 hex chars
 }
 
-pub fn sanitize_filename(text: &str, max_length: usize) -> String {
+pub(crate) fn sanitize_filename(text: &str, max_length: usize) -> String {
     let safe = RE_BAD_CHARS.replace_all(text, "");
     let safe = RE_WHITESPACE.replace_all(safe.trim(), "_");
     // Unicode-safe truncation
@@ -22,7 +27,7 @@ pub fn sanitize_filename(text: &str, max_length: usize) -> String {
     }
 }
 
-pub fn make_filename(url: &str, title: &str) -> String {
+pub(crate) fn make_filename(url: &str, title: &str) -> String {
     let id = get_article_id(url);
     let safe = sanitize_filename(title, 80);
     format!("{id}_{safe}.txt")
@@ -30,6 +35,14 @@ pub fn make_filename(url: &str, title: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::print_stdout,
+        clippy::print_stderr
+    )]
+
     use super::*;
 
     fn finite_text_corpus(max_length: usize) -> Vec<String> {

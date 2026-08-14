@@ -11,6 +11,7 @@
 //! TODO: Implement `get_text(bookmark_id)` to fetch archived content
 
 use super::ExtractedArticle;
+use crate::error::ExtractError;
 use std::time::Duration;
 
 /// Retrieve article text from Instapaper's permanent archive via API.
@@ -23,11 +24,11 @@ use std::time::Duration;
     clippy::unused_async,
     reason = "keeps the extractor interface stable until the planned HTTP implementation"
 )]
-pub async fn extract(
+pub(crate) async fn extract(
     _client: &reqwest::Client,
     _url: &str,
     _timeout: Duration,
-) -> anyhow::Result<Option<ExtractedArticle>> {
+) -> Result<Option<ExtractedArticle>, ExtractError> {
     // TODO: Look up bookmark_id for this URL from cached mapping
     // TODO: Call /api/1/bookmarks/get_text with OAuth signature
     // TODO: Run returned HTML through crate::html_extract::extract()

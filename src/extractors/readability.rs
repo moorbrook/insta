@@ -1,42 +1,17 @@
-use super::ExtractedArticle;
+use super::{article_from_html, fetch_html, ExtractedArticle};
+use crate::error::ExtractError;
 use std::time::Duration;
 
-const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-
-pub async fn extract(
+pub(crate) async fn extract(
     client: &reqwest::Client,
     url_str: &str,
     timeout: Duration,
-) -> anyhow::Result<Option<ExtractedArticle>> {
-    let response = client
-        .get(url_str)
-        .timeout(timeout)
-        .header("User-Agent", USER_AGENT)
-        .send()
-        .await?;
-
-    if !response.status().is_success() {
+) -> Result<Option<ExtractedArticle>, ExtractError> {
+    let Some(html) = fetch_html(client, url_str, timeout).await? else {
         return Ok(None);
-    }
-
-    let html = super::read_body(response).await?;
+    };
     if html.is_empty() {
         return Ok(None);
     }
-
-    // Multi-tier HTML content extraction
-    match crate::html_extract::extract(&html, url_str) {
-        Some(result) => {
-            let title = if result.title.is_empty() || result.title == "Untitled" {
-                "Untitled".to_string()
-            } else {
-                result.title
-            };
-            Ok(Some(ExtractedArticle {
-                title,
-                content: result.text,
-            }))
-        }
-        None => Ok(None),
-    }
+    Ok(article_from_html(&html, url_str))
 }

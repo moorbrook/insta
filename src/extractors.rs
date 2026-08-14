@@ -1,15 +1,54 @@
-pub mod archive;
-pub mod github;
-pub mod instapaper;
-pub mod readability;
-pub mod youtube;
+pub(crate) mod archive;
+pub(crate) mod github;
+pub(crate) mod instapaper;
+pub(crate) mod readability;
+pub(crate) mod youtube;
 
-use anyhow::Context;
 use encoding_rs::{CoderResult, Decoder, Encoding, UTF_8};
+use std::time::Duration;
 
-pub struct ExtractedArticle {
+use crate::error::ExtractError;
+
+pub(crate) const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+#[derive(Debug)]
+pub(crate) struct ExtractedArticle {
     pub title: String,
     pub content: String,
+}
+
+pub(crate) async fn fetch_html(
+    client: &reqwest::Client,
+    url: &str,
+    timeout: Duration,
+) -> Result<Option<String>, ExtractError> {
+    let response = client
+        .get(url)
+        .timeout(timeout)
+        .header("User-Agent", USER_AGENT)
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        return Ok(None);
+    }
+
+    Ok(Some(read_body(response).await?))
+}
+
+pub(crate) fn article_from_html(html: &str, url: &str) -> Option<ExtractedArticle> {
+    crate::html_extract::extract(html, url).map(|result| ExtractedArticle {
+        title: display_title(result.title),
+        content: result.text,
+    })
+}
+
+pub(crate) fn display_title(title: String) -> String {
+    if title.is_empty() || title == "Untitled" {
+        "Untitled".to_string()
+    } else {
+        title
+    }
 }
 
 /// Match an exact domain or one of its subdomains.
@@ -55,27 +94,24 @@ impl BoundedText {
         }
     }
 
-    fn push(&mut self, chunk: &[u8]) -> anyhow::Result<()> {
+    fn push(&mut self, chunk: &[u8]) -> Result<(), ExtractError> {
         let input_bytes = self
             .input_bytes
             .checked_add(chunk.len())
-            .context("response body size overflow")?;
+            .ok_or(ExtractError::BodySizeOverflow)?;
         if input_bytes > self.limit {
-            anyhow::bail!(
-                "decompressed response body exceeds {}-byte limit",
-                self.limit
-            );
+            return Err(ExtractError::BodyTooLarge { limit: self.limit });
         }
         self.input_bytes = input_bytes;
         self.decode(chunk, false)
     }
 
-    fn finish(mut self) -> anyhow::Result<String> {
+    fn finish(mut self) -> Result<String, ExtractError> {
         self.decode(&[], true)?;
-        String::from_utf8(self.output).context("text decoder produced invalid UTF-8")
+        Ok(String::from_utf8(self.output)?)
     }
 
-    fn decode(&mut self, source: &[u8], last: bool) -> anyhow::Result<()> {
+    fn decode(&mut self, source: &[u8], last: bool) -> Result<(), ExtractError> {
         let mut read = 0;
 
         loop {
@@ -85,26 +121,26 @@ impl BoundedText {
                     .decode_to_utf8(&source[read..], &mut decoded, last);
             read = read
                 .checked_add(consumed)
-                .context("text decoder input offset overflow")?;
+                .ok_or(ExtractError::DecoderOffsetOverflow)?;
 
             let output_bytes = self
                 .output
                 .len()
                 .checked_add(written)
-                .context("decoded text size overflow")?;
+                .ok_or(ExtractError::TextSizeOverflow)?;
             if output_bytes > self.limit {
-                anyhow::bail!("decoded text exceeds {}-byte limit", self.limit);
+                return Err(ExtractError::TextTooLarge { limit: self.limit });
             }
             self.output
                 .try_reserve(written)
-                .context("failed to reserve decoded text buffer")?;
+                .map_err(|_| ExtractError::BufferReserve)?;
             self.output.extend_from_slice(&decoded[..written]);
 
             match result {
                 CoderResult::InputEmpty => return Ok(()),
                 CoderResult::OutputFull if consumed != 0 || written != 0 => {}
                 CoderResult::OutputFull => {
-                    anyhow::bail!("text decoder made no progress");
+                    return Err(ExtractError::DecoderStalled);
                 }
             }
         }
@@ -142,17 +178,17 @@ fn declared_charset(content_type: &str) -> Option<&str> {
 /// The limit is enforced on chunks after reqwest's automatic decompression and
 /// again on the UTF-8 output after charset decoding. Crossing either limit
 /// rejects the response without reading or decoding the remainder.
-pub async fn read_body(response: reqwest::Response) -> anyhow::Result<String> {
+pub(crate) async fn read_body(response: reqwest::Response) -> Result<String, ExtractError> {
     read_body_with_limit(response, MAX_BODY_BYTES).await
 }
 
 async fn read_body_with_limit(
     mut response: reqwest::Response,
     limit: usize,
-) -> anyhow::Result<String> {
+) -> Result<String, ExtractError> {
     if let Some(len) = response.content_length() {
         if len > u64::try_from(limit).unwrap_or(u64::MAX) {
-            anyhow::bail!("response body is {len} bytes (limit: {limit} bytes)");
+            return Err(ExtractError::ContentLengthTooLarge { len, limit });
         }
     }
 
@@ -165,6 +201,14 @@ async fn read_body_with_limit(
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::print_stdout,
+        clippy::print_stderr
+    )]
+
     use std::{
         io::{Read, Write},
         net::TcpListener,
@@ -174,6 +218,7 @@ mod tests {
     use encoding_rs::{UTF_8, WINDOWS_1252};
 
     use super::{host_is_domain_or_subdomain, read_body_with_limit, BoundedText};
+    use crate::error::ExtractError;
 
     #[test]
     fn host_matching_accepts_exact_domains_and_subdomains() {
@@ -212,7 +257,7 @@ mod tests {
         encoding: &'static encoding_rs::Encoding,
         segments: &[&[u8]],
         limit: usize,
-    ) -> anyhow::Result<String> {
+    ) -> Result<String, ExtractError> {
         let mut text = BoundedText::new(encoding, limit);
         for segment in segments {
             text.push(segment)?;

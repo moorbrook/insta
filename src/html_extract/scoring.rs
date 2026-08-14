@@ -7,7 +7,8 @@ use scraper::{Html, Selector};
 use std::collections::HashSet;
 use std::sync::LazyLock;
 
-pub struct ContentCandidate {
+#[derive(Debug)]
+pub(super) struct ContentCandidate {
     pub title: String,
     pub text: String,
 }
@@ -95,18 +96,36 @@ static UNWANTED_SELECTORS: LazyLock<Vec<Selector>> = LazyLock::new(|| {
         .collect()
 });
 
-static BODY_SEL: LazyLock<Selector> = LazyLock::new(|| Selector::parse("body").unwrap());
-static P_SEL: LazyLock<Selector> = LazyLock::new(|| Selector::parse("p").unwrap());
-static HEADING_SEL: LazyLock<Selector> = LazyLock::new(|| Selector::parse("h1, h2, h3").unwrap());
-static LI_SEL: LazyLock<Selector> = LazyLock::new(|| Selector::parse("li").unwrap());
-static A_SEL: LazyLock<Selector> = LazyLock::new(|| Selector::parse("a").unwrap());
-static H1_SEL: LazyLock<Selector> = LazyLock::new(|| Selector::parse("h1").unwrap());
+static BODY_SEL: LazyLock<Selector> = LazyLock::new(|| {
+    #[allow(clippy::unwrap_used, reason = "hardcoded CSS selector must parse")]
+    Selector::parse("body").unwrap()
+});
+static P_SEL: LazyLock<Selector> = LazyLock::new(|| {
+    #[allow(clippy::unwrap_used, reason = "hardcoded CSS selector must parse")]
+    Selector::parse("p").unwrap()
+});
+static HEADING_SEL: LazyLock<Selector> = LazyLock::new(|| {
+    #[allow(clippy::unwrap_used, reason = "hardcoded CSS selector must parse")]
+    Selector::parse("h1, h2, h3").unwrap()
+});
+static LI_SEL: LazyLock<Selector> = LazyLock::new(|| {
+    #[allow(clippy::unwrap_used, reason = "hardcoded CSS selector must parse")]
+    Selector::parse("li").unwrap()
+});
+static A_SEL: LazyLock<Selector> = LazyLock::new(|| {
+    #[allow(clippy::unwrap_used, reason = "hardcoded CSS selector must parse")]
+    Selector::parse("a").unwrap()
+});
+static H1_SEL: LazyLock<Selector> = LazyLock::new(|| {
+    #[allow(clippy::unwrap_used, reason = "hardcoded CSS selector must parse")]
+    Selector::parse("h1").unwrap()
+});
 
 /// Extract main content from a parsed HTML document.
 ///
 /// `boilerplate_ids` contains node IDs already identified as boilerplate
 /// by the cleaning pass (scripts, nav, footer, ads, etc.).
-pub fn extract_main_content(
+pub(super) fn extract_main_content(
     doc: &Html,
     boilerplate_ids: &HashSet<ego_tree::NodeId>,
 ) -> Option<ContentCandidate> {

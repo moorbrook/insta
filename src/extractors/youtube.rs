@@ -1,16 +1,20 @@
 use super::ExtractedArticle;
+use crate::error::ExtractError;
 use regex::Regex;
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::process::Command;
 
 static YT_DLP_WARNED: AtomicBool = AtomicBool::new(false);
+static YT_DLP_STATE: AtomicU8 = AtomicU8::new(0); // 0 unknown, 1 yes, 2 no
+
+#[allow(clippy::expect_used, reason = "hardcoded regex must compile")]
 static VTT_HTML_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new("<[^>]*>").expect("VTT tag regex must compile"));
 
-pub fn is_youtube(url: &str) -> bool {
+pub(crate) fn is_youtube(url: &str) -> bool {
     super::host_is_domain_or_subdomain(url, "youtube.com")
         || super::host_is_domain_or_subdomain(url, "youtu.be")
 }
@@ -21,43 +25,88 @@ fn yt_dlp_command() -> Command {
     command
 }
 
-pub async fn extract(url: &str, timeout: Duration) -> anyhow::Result<Option<ExtractedArticle>> {
-    // Check if yt-dlp is available
-    let version_check =
-        tokio::time::timeout(timeout, yt_dlp_command().arg("--version").output()).await;
-    if !matches!(version_check, Ok(Ok(output)) if output.status.success()) {
-        if !YT_DLP_WARNED.swap(true, Ordering::Relaxed) {
-            eprintln!("Warning: yt-dlp is not installed. YouTube transcripts will be skipped.");
-            eprintln!("  Install: uv tool install yt-dlp  (https://docs.astral.sh/uv)");
-        }
+async fn yt_dlp_available(timeout: Duration) -> bool {
+    match YT_DLP_STATE.load(Ordering::Relaxed) {
+        1 => return true,
+        2 => return false,
+        _ => {}
+    }
+
+    let available = yt_dlp_output(timeout, &["--version"]).await.is_some();
+    YT_DLP_STATE.store(if available { 1 } else { 2 }, Ordering::Relaxed);
+    if !available && !YT_DLP_WARNED.swap(true, Ordering::Relaxed) {
+        tracing::warn!("yt-dlp is not installed; YouTube transcripts will be skipped");
+        tracing::warn!("install with: uv tool install yt-dlp  (https://docs.astral.sh/uv)");
+    }
+    available
+}
+
+async fn yt_dlp_output(timeout: Duration, args: &[&str]) -> Option<std::process::Output> {
+    let result = tokio::time::timeout(timeout, yt_dlp_command().args(args).output()).await;
+    match result {
+        Ok(Ok(output)) if output.status.success() => Some(output),
+        _ => None,
+    }
+}
+
+async fn yt_dlp_succeeds(
+    timeout: Duration,
+    prefix: &[&str],
+    output_template: &std::path::Path,
+    url: &str,
+) -> bool {
+    let result = tokio::time::timeout(
+        timeout,
+        yt_dlp_command()
+            .args(prefix)
+            .arg(output_template)
+            .arg(url)
+            .output(),
+    )
+    .await;
+    matches!(result, Ok(Ok(output)) if output.status.success())
+}
+
+pub(crate) async fn extract(
+    url: &str,
+    timeout: Duration,
+) -> Result<Option<ExtractedArticle>, ExtractError> {
+    if !yt_dlp_available(timeout).await {
         return Ok(None);
     }
 
     let tmpdir = tempfile::tempdir()?;
     let output_template = tmpdir.path().join("transcript");
 
-    // Try auto-generated subtitles first
-    let result = yt_dlp_command()
-        .args(["--write-auto-sub", "--skip-download", "--sub-langs", "en"])
-        .arg("--output")
-        .arg(&output_template)
-        .arg(url)
-        .output();
+    let success = yt_dlp_succeeds(
+        timeout,
+        &[
+            "--write-auto-sub",
+            "--skip-download",
+            "--sub-langs",
+            "en",
+            "--output",
+        ],
+        &output_template,
+        url,
+    )
+    .await;
 
-    let output = tokio::time::timeout(timeout, result).await;
-    let success = matches!(&output, Ok(Ok(o)) if o.status.success());
-
-    // Fallback to manual subtitles
     if !success {
-        let result = yt_dlp_command()
-            .args(["--write-sub", "--skip-download", "--sub-langs", "en"])
-            .arg("--output")
-            .arg(&output_template)
-            .arg(url)
-            .output();
-
-        let output = tokio::time::timeout(timeout, result).await;
-        if !matches!(&output, Ok(Ok(o)) if o.status.success()) {
+        let manual = yt_dlp_succeeds(
+            timeout,
+            &[
+                "--write-sub",
+                "--skip-download",
+                "--sub-langs",
+                "en",
+                "--output",
+            ],
+            &output_template,
+            url,
+        )
+        .await;
+        if !manual {
             return Ok(None);
         }
     }
@@ -77,19 +126,9 @@ pub async fn extract(url: &str, timeout: Duration) -> anyhow::Result<Option<Extr
     };
 
     // Get video title
-    let title_output = tokio::time::timeout(
-        timeout,
-        yt_dlp_command()
-            .args(["--print", "%(title)s", url])
-            .output(),
-    )
-    .await;
-
-    let title = match title_output {
-        Ok(Ok(output)) if output.status.success() => {
-            String::from_utf8_lossy(&output.stdout).trim().to_string()
-        }
-        _ => "YouTube Video".to_string(),
+    let title = match yt_dlp_output(timeout, &["--print", "%(title)s", url]).await {
+        Some(output) => String::from_utf8_lossy(&output.stdout).trim().to_string(),
+        None => "YouTube Video".to_string(),
     };
 
     // Parse VTT to plain text with deduplication
@@ -135,6 +174,14 @@ fn parse_vtt(vtt_content: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::print_stdout,
+        clippy::print_stderr
+    )]
+
     use super::{is_youtube, parse_vtt};
 
     #[test]

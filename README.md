@@ -162,7 +162,17 @@ sqlite3 articles/index.db "SELECT title FROM articles WHERE url LIKE '%nytimes.c
 
 ## Agent-Friendly
 
-`insta` is designed for agentic search workflows. AI agents (Claude, Codex, Gemini, etc.) can `insta search` to find relevant articles from your personal reading history, `insta read` to pull full text into context, and `insta stats` to check coverage — all through the CLI with structured, parseable output. Your Instapaper archive becomes a searchable knowledge base that agents can query autonomously.
+`insta` is designed for agentic search workflows. AI agents can `insta search` to find relevant articles from your personal reading history, `insta read` to pull full text into context, and `insta stats` to check coverage.
+
+Add `--json` for machine-readable stdout. Logs and progress stay on stderr. Piped human output is unchanged unless you pass `--json`.
+
+```bash
+insta search "machine learning" --json
+insta stats --json
+insta read 42 --json
+```
+
+Increase diagnostic verbosity with `-v` / `-vv` / `-vvv`, or set `RUST_LOG`.
 
 ## Instapaper API Integration (WIP)
 
