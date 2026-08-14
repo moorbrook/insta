@@ -1,8 +1,7 @@
-use super::ExtractedArticle;
+use super::{article_from_html, fetch_html, host_is_domain_or_subdomain, ExtractedArticle};
+use crate::error::ExtractError;
 use serde::Deserialize;
 use std::time::Duration;
-
-const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36";
 
 #[derive(Deserialize)]
 struct WaybackResponse {
@@ -29,24 +28,22 @@ async fn get_archive_snapshot(
     client: &reqwest::Client,
     url: &str,
 ) -> Option<(String, ArchiveSource)> {
-    // Try archive.ph first
     let archive_url = format!("https://archive.ph/newest/{url}");
     if let Ok(response) = client
         .get(&archive_url)
-        .header("User-Agent", USER_AGENT)
+        .header("User-Agent", super::USER_AGENT)
         .timeout(Duration::from_secs(10))
         .send()
         .await
     {
         if response.status().is_success() {
             let final_url = response.url().to_string();
-            if final_url.contains("archive.ph") {
+            if host_is_domain_or_subdomain(&final_url, "archive.ph") {
                 return Some((final_url, ArchiveSource::ArchivePh));
             }
         }
     }
 
-    // Fallback to Wayback Machine
     let api_url = format!("https://archive.org/wayback/available?url={url}");
     if let Ok(response) = client
         .get(&api_url)
@@ -66,48 +63,30 @@ async fn get_archive_snapshot(
     None
 }
 
-pub async fn extract(
+pub(crate) async fn extract(
     client: &reqwest::Client,
     url: &str,
     timeout: Duration,
-) -> anyhow::Result<Option<ExtractedArticle>> {
-    let (snapshot_url, source) = match get_archive_snapshot(client, url).await {
-        Some(s) => s,
-        None => return Ok(None),
+) -> Result<Option<ExtractedArticle>, ExtractError> {
+    let Some((snapshot_url, source)) = get_archive_snapshot(client, url).await else {
+        return Ok(None);
     };
 
-    // Fetch the archived page
-    let response = client
-        .get(&snapshot_url)
-        .timeout(timeout)
-        .header("User-Agent", USER_AGENT)
-        .send()
-        .await?;
-
-    if !response.status().is_success() {
+    let Some(html) = fetch_html(client, &snapshot_url, timeout).await? else {
         return Ok(None);
-    }
+    };
 
-    let html = super::read_body(response).await?;
+    let Some(mut article) = article_from_html(&html, &snapshot_url) else {
+        return Ok(None);
+    };
 
-    // Extract content from the archived page
-    match crate::html_extract::extract(&html, &snapshot_url) {
-        Some(result) => {
-            let title = if result.title.is_empty() || result.title == "Untitled" {
-                "Untitled".to_string()
-            } else {
-                result.title
-            };
-            let source_name = match source {
-                ArchiveSource::ArchivePh => "Archive.ph",
-                ArchiveSource::Wayback => "Internet Archive Wayback Machine",
-            };
-            let content = format!(
-                "{}\n\n---\nNote: This article was retrieved from {source_name}\nOriginal URL: {url}\nArchive URL: {snapshot_url}\n",
-                result.text
-            );
-            Ok(Some(ExtractedArticle { title, content }))
-        }
-        None => Ok(None),
-    }
+    let source_name = match source {
+        ArchiveSource::ArchivePh => "Archive.ph",
+        ArchiveSource::Wayback => "Internet Archive Wayback Machine",
+    };
+    article.content = format!(
+        "{}\n\n---\nNote: This article was retrieved from {source_name}\nOriginal URL: {url}\nArchive URL: {snapshot_url}\n",
+        article.content
+    );
+    Ok(Some(article))
 }

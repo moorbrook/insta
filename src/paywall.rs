@@ -1,4 +1,4 @@
-use url::Url;
+use crate::extractors::host_is_domain_or_subdomain;
 
 const PAYWALLED_DOMAINS: &[&str] = &[
     // USA National News
@@ -88,28 +88,27 @@ const PAYWALLED_DOMAINS: &[&str] = &[
     "eltiempo.com",
 ];
 
-fn extract_domain(url_str: &str) -> Option<String> {
-    let parsed = Url::parse(url_str).ok()?;
-    let host = parsed.host_str()?;
-    let domain = host.strip_prefix("www.").unwrap_or(host);
-    Some(domain.to_lowercase())
+pub(crate) fn is_paywalled(url_str: &str) -> bool {
+    get_paywalled_domain(url_str).is_some()
 }
 
-pub fn is_paywalled(url_str: &str) -> bool {
-    extract_domain(url_str).is_some_and(|d| PAYWALLED_DOMAINS.contains(&d.as_str()))
-}
-
-pub fn get_paywalled_domain(url_str: &str) -> Option<String> {
-    let domain = extract_domain(url_str)?;
-    if PAYWALLED_DOMAINS.contains(&domain.as_str()) {
-        Some(domain)
-    } else {
-        None
-    }
+pub(crate) fn get_paywalled_domain(url_str: &str) -> Option<&'static str> {
+    PAYWALLED_DOMAINS
+        .iter()
+        .copied()
+        .find(|domain| host_is_domain_or_subdomain(url_str, domain))
 }
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::print_stdout,
+        clippy::print_stderr
+    )]
+
     use super::*;
 
     #[test]
@@ -128,8 +127,43 @@ mod tests {
     fn test_get_paywalled_domain() {
         assert_eq!(
             get_paywalled_domain("https://www.wsj.com/article"),
-            Some("wsj.com".to_string())
+            Some("wsj.com")
         );
         assert_eq!(get_paywalled_domain("https://example.com"), None);
+    }
+
+    #[test]
+    fn path_query_fragment_and_scheme_do_not_change_classification() {
+        for url in [
+            "https://nytimes.com",
+            "http://nytimes.com/story",
+            "https://nytimes.com/story?gift=1",
+            "https://nytimes.com/story#comments",
+            "HTTPS://WWW.NYTIMES.COM/story",
+        ] {
+            assert!(is_paywalled(url), "expected paywall classification: {url}");
+        }
+    }
+
+    #[test]
+    fn domain_substrings_and_typosquats_are_not_classified() {
+        for url in [
+            "https://notnytimes.com/story",
+            "https://nytimes.com.evil.example/story",
+            "https://example.com/?next=https://nytimes.com",
+            "https://nytimes.com@example.com/story",
+            "not a URL mentioning nytimes.com",
+        ] {
+            assert!(!is_paywalled(url), "false paywall classification: {url}");
+        }
+    }
+
+    #[test]
+    fn listed_subdomains_are_classified() {
+        assert!(is_paywalled("https://cooking.nytimes.com/recipe"));
+        assert_eq!(
+            get_paywalled_domain("https://cooking.nytimes.com/recipe"),
+            Some("nytimes.com")
+        );
     }
 }

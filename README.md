@@ -6,7 +6,8 @@ Downloads articles from an Instapaper CSV export, extracts clean text using a mu
 
 ## Install
 
-Requires a [Rust toolchain](https://rustup.rs/). Then:
+Requires Rust 1.88 or newer from a
+[Rust toolchain](https://rustup.rs/). Then:
 
 ```bash
 cargo install --git https://github.com/moorbrook/insta
@@ -59,6 +60,12 @@ insta download export.csv -d ~/archive      # custom output directory
 | `--retry-failed` | off | Re-attempt previously failed articles |
 
 Automatically skips articles already marked as successful. Safe to run multiple times with updated exports.
+
+The worker count is also the admission bound: at most `--workers` article
+tasks are in flight at once rather than one task being spawned per CSV row.
+Each HTTP response is capped at 8 MiB after decompression and again at 8 MiB
+after text decoding, which keeps hostile or unexpectedly large responses from
+turning concurrency into unbounded memory use.
 
 If you use a custom directory, pass `-d` to all commands:
 ```bash
@@ -124,6 +131,8 @@ For each article, `insta` tries these strategies in order, with automatic fallba
 6. **Archive fallback** (final retry only) — archive.ph, then Wayback Machine
 
 Articles retrieved from archives are tagged with `archived` status in the database.
+HTML decoding honors a declared character set through `encoding_rs`; pages
+without a usable declaration fall back to UTF-8.
 
 ## Output Structure
 
@@ -153,7 +162,17 @@ sqlite3 articles/index.db "SELECT title FROM articles WHERE url LIKE '%nytimes.c
 
 ## Agent-Friendly
 
-`insta` is designed for agentic search workflows. AI agents (Claude, Codex, Gemini, etc.) can `insta search` to find relevant articles from your personal reading history, `insta read` to pull full text into context, and `insta stats` to check coverage — all through the CLI with structured, parseable output. Your Instapaper archive becomes a searchable knowledge base that agents can query autonomously.
+`insta` is designed for agentic search workflows. AI agents can `insta search` to find relevant articles from your personal reading history, `insta read` to pull full text into context, and `insta stats` to check coverage.
+
+Add `--json` for machine-readable stdout. Logs and progress stay on stderr. Piped human output is unchanged unless you pass `--json`.
+
+```bash
+insta search "machine learning" --json
+insta stats --json
+insta read 42 --json
+```
+
+Increase diagnostic verbosity with `-v` / `-vv` / `-vvv`, or set `RUST_LOG`.
 
 ## Instapaper API Integration (WIP)
 
@@ -171,6 +190,8 @@ These are expected failures without the Instapaper API configured:
 - **Dead links / 404s** — sites that have gone offline since bookmarking
 - **JavaScript SPAs** — sites that require a browser to render content
 - **Login-required pages** — private or authenticated content
+- **Large responses** — decompressed or decoded bodies over 8 MiB are rejected
+  instead of being partially archived
 
 ## Deprecated Python Version
 

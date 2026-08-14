@@ -1,16 +1,21 @@
-use super::ExtractedArticle;
+use super::{ExtractedArticle, USER_AGENT};
+use crate::error::ExtractError;
 use base64::Engine;
 use regex::Regex;
 use serde::Deserialize;
 use std::sync::LazyLock;
 use std::time::Duration;
 
+#[allow(clippy::expect_used, reason = "hardcoded regex must compile")]
 static GITHUB_REPO_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"https?://(?:www\.)?github\.com/([^/]+)/([^/?#]+)/?(?:[?#].*)?$").unwrap()
+    Regex::new(r"https?://(?:www\.)?github\.com/([^/]+)/([^/?#]+)/?(?:[?#].*)?$")
+        .expect("hardcoded GitHub repo regex must compile")
 });
 
+#[allow(clippy::expect_used, reason = "hardcoded regex must compile")]
 static GITHUB_BLOB_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"https?://(?:www\.)?github\.com/([^/]+)/([^/]+)/blob/([^/]+)/(.+)").unwrap()
+    Regex::new(r"https?://(?:www\.)?github\.com/([^/]+)/([^/]+)/blob/([^/]+)/(.+)")
+        .expect("hardcoded GitHub blob regex must compile")
 });
 
 #[derive(Deserialize)]
@@ -18,15 +23,16 @@ struct GitHubReadme {
     content: String,
 }
 
-pub fn is_github(url: &str) -> bool {
-    url.contains("github.com") && !url.contains("gist.")
+pub(crate) fn is_github(url: &str) -> bool {
+    super::host_is_domain_or_subdomain(url, "github.com")
+        && !super::host_is_domain_or_subdomain(url, "gist.github.com")
 }
 
-pub async fn extract(
+pub(crate) async fn extract(
     client: &reqwest::Client,
     url: &str,
     timeout: Duration,
-) -> anyhow::Result<Option<ExtractedArticle>> {
+) -> Result<Option<ExtractedArticle>, ExtractError> {
     // Try blob path first (more specific)
     if let Some(article) = extract_blob(client, url, timeout).await? {
         return Ok(Some(article));
@@ -45,10 +51,9 @@ async fn extract_blob(
     client: &reqwest::Client,
     url: &str,
     timeout: Duration,
-) -> anyhow::Result<Option<ExtractedArticle>> {
-    let caps = match GITHUB_BLOB_RE.captures(url) {
-        Some(c) => c,
-        None => return Ok(None),
+) -> Result<Option<ExtractedArticle>, ExtractError> {
+    let Some(caps) = GITHUB_BLOB_RE.captures(url) else {
+        return Ok(None);
     };
 
     let owner = &caps[1];
@@ -62,7 +67,7 @@ async fn extract_blob(
     let response = client
         .get(&raw_url)
         .timeout(timeout)
-        .header("User-Agent", "Mozilla/5.0")
+        .header("User-Agent", USER_AGENT)
         .send()
         .await?;
 
@@ -87,10 +92,9 @@ async fn extract_readme(
     client: &reqwest::Client,
     url: &str,
     timeout: Duration,
-) -> anyhow::Result<Option<ExtractedArticle>> {
-    let caps = match GITHUB_REPO_RE.captures(url) {
-        Some(c) => c,
-        None => return Ok(None),
+) -> Result<Option<ExtractedArticle>, ExtractError> {
+    let Some(caps) = GITHUB_REPO_RE.captures(url) else {
+        return Ok(None);
     };
 
     let owner = &caps[1];
@@ -100,7 +104,7 @@ async fn extract_readme(
     let response = client
         .get(&api_url)
         .timeout(timeout)
-        .header("User-Agent", "Mozilla/5.0")
+        .header("User-Agent", USER_AGENT)
         .header("Accept", "application/vnd.github.v3+json")
         .send()
         .await?;
@@ -119,4 +123,28 @@ async fn extract_readme(
         title: format!("{owner}/{repo}"),
         content,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::print_stdout,
+        clippy::print_stderr
+    )]
+
+    use super::is_github;
+
+    #[test]
+    fn github_classification_uses_the_destination_host_and_excludes_gists() {
+        assert!(is_github("https://github.com/rust-lang/rust"));
+        assert!(is_github(
+            "https://www.github.com/rust-lang/rust/blob/main/README.md"
+        ));
+        assert!(!is_github("https://gist.github.com/example/123"));
+        assert!(!is_github("https://example.com/?next=github.com/repo"));
+        assert!(!is_github("https://github.com.evil.example/repo"));
+    }
 }

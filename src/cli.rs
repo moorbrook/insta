@@ -5,16 +5,25 @@ use std::path::PathBuf;
 #[command(
     name = "insta",
     version,
-    about = "Instapaper article downloader and search engine"
+    about = "Archive and search an Instapaper library",
+    after_help = "Examples:\n  insta download export.csv\n  insta search 'machine learning'\n  insta search 'rust' --json"
 )]
-pub struct Args {
+pub(crate) struct Args {
+    /// Output JSON instead of human-readable text
+    #[arg(long, global = true)]
+    pub json: bool,
+
+    /// Increase log verbosity on stderr (-v, -vv, -vvv)
+    #[arg(short, long, action = clap::ArgAction::Count, global = true)]
+    pub verbose: u8,
+
     #[command(subcommand)]
     pub command: Command,
 }
 
 #[derive(Subcommand, Debug)]
-pub enum Command {
-    /// Download articles from Instapaper CSV export
+pub(crate) enum Command {
+    /// Download articles from an Instapaper CSV export
     Download {
         /// Path to Instapaper CSV export file
         csv_file: PathBuf,
@@ -46,9 +55,9 @@ pub enum Command {
         retry_failed: bool,
     },
 
-    /// Full-text search across all downloaded articles
+    /// Full-text search across downloaded articles
     Search {
-        /// Search query (supports FTS5 syntax: quotes for phrases, OR, NOT)
+        /// Search query (FTS5: quotes, OR, NOT)
         #[arg(required = true, num_args = 1..)]
         query: Vec<String>,
 
@@ -68,7 +77,7 @@ pub enum Command {
 
     /// Read full article content by ID
     Read {
-        /// Article ID (shown in search results as [ID])
+        /// Article ID (shown in search results as `[ID]`)
         id: i64,
 
         /// Path to articles directory containing index.db

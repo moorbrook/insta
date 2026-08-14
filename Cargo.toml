@@ -2,7 +2,9 @@
 name = "instapaper-dl"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.88"
 license = "MIT"
+description = "Archive and search an Instapaper library"
 
 [[bin]]
 name = "insta"
@@ -11,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "fs", "time", "sync"] }
 reqwest = { version = "0.12", features = ["json", "gzip", "brotli"] }
+encoding_rs = "0.8.35"
 clap = { version = "4", features = ["derive"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 csv = "1"
@@ -23,15 +26,39 @@ indicatif = "0.17"
 url = "2"
 base64 = "0.22"
 anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 regex = "1"
 tempfile = "3"
-rayon = "1"
 scraper = "0.22"
 ego-tree = "0.10"
-urlencoding = "2"
 
 [profile.release]
 opt-level = 3
 lto = true
 codegen-units = 1
 strip = true
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+unimplemented = "deny"
+todo = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+clone_on_ref_ptr = "warn"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+struct_excessive_bools = "allow"
+
+[lints.rust]
+unsafe_code = "warn"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+unused_qualifications = "warn"

@@ -86,7 +86,7 @@ static BOILERPLATE_SELECTORS: LazyLock<Vec<Selector>> = LazyLock::new(|| {
 ///
 /// Returns a set of node IDs (element + all descendants) that should be
 /// excluded during content extraction.
-pub fn find_boilerplate_ids(doc: &Html) -> HashSet<ego_tree::NodeId> {
+pub(super) fn find_boilerplate_ids(doc: &Html) -> HashSet<ego_tree::NodeId> {
     let mut ids = HashSet::new();
 
     for sel in REMOVE_TAG_SELECTORS.iter() {
