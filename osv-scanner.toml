@@ -1,0 +1,9 @@
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0057"
+ignoreUntil = 2027-01-22T00:00:00Z
+reason = "fxhash is unmaintained without a fixed release, used by the runtime scraper/html5ever parsing graph. A parent migration is required to remove it."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0119"
+ignoreUntil = 2027-01-22T00:00:00Z
+reason = "number_prefix is unmaintained without a fixed release, used by indicatif 0.17 progress display. A parent major migration is outside this security update."
